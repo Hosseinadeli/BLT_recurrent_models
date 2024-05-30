@@ -26,9 +26,9 @@ import os
 from PIL import Image
 Image.warnings.simplefilter('ignore')
 
-#TODO 
-np.random.seed(0)
-torch.manual_seed(0)
+# TODO 
+# np.random.seed(0)
+# torch.manual_seed(0)
 
 try:
     import wandb
@@ -106,6 +106,8 @@ def get_args_parser():
 
     parser.add_argument('--distributed', default=True,
                         help='whether to use distributed training')
+    parser.add_argument('--port', default='12382', type=str,
+                        help='MASTER_PORT for torch.distributed')
 
     return parser
 
