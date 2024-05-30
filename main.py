@@ -14,10 +14,11 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 
-from cornet import get_cornet_model
-from blt import get_blt_model
+# from models.cornet import get_cornet_model
+# from models.blt import get_blt_model
+from models.build_model import build_model
 from engine import train_one_epoch, evaluate
-from datasets import fetch_data_loaders
+from datasets.datasets import fetch_data_loaders
 import utils 
 from pathlib import Path
 import os
@@ -25,6 +26,7 @@ import os
 from PIL import Image
 Image.warnings.simplefilter('ignore')
 
+#TODO 
 np.random.seed(0)
 torch.manual_seed(0)
 
@@ -61,7 +63,7 @@ def get_args_parser():
     parser.add_argument('--objective', choices=['classification', 'contrastive'],
                         default='classification', help='which model to train')
 
-    parser.add_argument('--recurrent_steps', default=5, type=int,
+    parser.add_argument('--recurrent_steps', default=8, type=int,
                         help='number of time steps to run the model (only R model)')
     parser.add_argument('--num_layers', default=4, type=int,
                         help='number of time steps to run the model (only R model)')
@@ -72,7 +74,7 @@ def get_args_parser():
                         help='number of total epochs to run')
     parser.add_argument('--batch_size', default=128, type=int,
                         help='mini-batch size')
-    parser.add_argument('--lr', default=.001, type=float,
+    parser.add_argument('--lr', default=.0005, type=float,
                         help='initial learning rate')
     parser.add_argument('--weight_decay', default=1e-4, type=float,
                         help='weight decay ')
@@ -89,12 +91,13 @@ def get_args_parser():
     parser.add_argument('--dataset', choices=['imagenet', 'vggface2', 'bfm_ids', 'NSD',
                                               'imagenet_vggface2', 'imagenet_face']
                         , default='imagenet', type=str)
-    parser.add_argument('--data_path', required=True, default='/share/data/imagenet-pytorch',
+    parser.add_argument('--data_path', default='/share/data/imagenet-pytorch',
                          type=str, help='path to ImageNet folder')
     parser.add_argument('--image_size', default=224, type=int, 
                         help='what size should the image be resized to?')
     parser.add_argument('--horizontal_flip', default=True,
                     help='wether to use horizontal flip augmentation')
+    parser.add_argument('--run', default=1, type=int) 
     
     parser.add_argument('--img_channels', default=3, type=int,
                     help="what should the image channels be (not what it is)?") #gray scale 1 / color 3
@@ -105,30 +108,6 @@ def get_args_parser():
                         help='whether to use distributed training')
 
     return parser
-
-
-def get_model(args, pretrained=False):
-
-    args.img_channels = 3
-    if 'blt' in args.model:
-        # if args.model[4:] == 'b':
-        #     kwargs = {'in_channels': args.img_channels, 'times': args.recurrent_steps} #
-        # else:
-        kwargs = {'in_channels': args.img_channels, 'times': args.recurrent_steps, \
-                  'num_layers': args.num_layers, 'num_classes': args.num_classes} #
-        model = get_blt_model(args.model[4:], pretrained=pretrained, map_location=None, **kwargs) #
-        
-    elif 'cornet' in args.model:
-        if args.model[7:] == 'z' or args.model[7:] == 's':
-            kwargs = {'in_channels': args.img_channels, 'num_classes': args.num_classes} #
-        elif args.model[7:] == 'r' or args.model[7:] == 'rt':
-            kwargs = {'in_channels': args.img_channels, 'times': args.recurrent_steps, \
-                      'num_classes': args.num_classes} #
-
-        model = get_cornet_model(args.model[7:], pretrained=pretrained, map_location=None, **kwargs) #
-        
-    print(model)
-    return model
 
 
 class SetCriterion(nn.Module):
@@ -159,7 +138,7 @@ def main(rank, world_size, args):
 
     train_loader, val_loader = fetch_data_loaders(args)
  
-    model = get_model(args)
+    model = build_model(args)
     model = model.cuda() 
 
     model_ddp = model
@@ -170,7 +149,7 @@ def main(rank, world_size, args):
     criterion = SetCriterion()
     
     if args.output_path:
-        args.save_dir = args.output_path + f'/{args.model}_{args.dataset}/'
+        args.save_dir = args.output_path + f'{args.objective}/{args.dataset}/{args.model}/run_{args.run}'
         if (not os.path.exists(args.save_dir)) and (args.gpu == 0):
             os.makedirs(args.save_dir)
 

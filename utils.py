@@ -29,7 +29,7 @@ def init_distributed_mode(args):
     # args.distributed = True
 
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12381'
+    os.environ['MASTER_PORT'] = '12382'
     args.gpu = args.rank
     args.dist_url = 'env://'
     torch.cuda.set_device(args.gpu)
