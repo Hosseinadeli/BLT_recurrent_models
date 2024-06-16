@@ -18,10 +18,13 @@ class Flatten(nn.Module):
     def forward(self, x):
         return x.view(x.size(0), -1)
 
+# BLT
+
 class blt(nn.Module):
 
-    def __init__(self, conn_matrix, num_classes, layer_channels, out_shape, times=5):
+    def __init__(self, model_name, conn_matrix, num_classes, layer_channels, out_shape, times=5):
         super().__init__()
+        self.model_name = model_name
         self.times = times
         self.num_classes = num_classes
         self.connections = {}
@@ -121,6 +124,21 @@ class blt(nn.Module):
         for block in blocks[2:]:
             outputs[block] = None
 
+        # if the model is blt_b then we don't need to iterate over time steps
+        if self.model_name == 'b':
+            for block in blocks[2:]:
+                in_blocks =  self.conn_matrix[:,int(block)] 
+                i = np.where(in_blocks)[0][0]
+                input = getattr(self, f'conv_{i}_{block}')(outputs[f'{i}'])
+                new_output = getattr(self, f'norm_{block}')(input)
+                new_output = getattr(self, f'non_lin_{block}')(new_output)
+                new_output = getattr(self, f'output_{block}')(new_output)
+                outputs[block] = new_output
+
+            out = outputs[blocks[-1]]
+            return self.read_out(out)
+
+        # iterate over time steps
         for t in range(1, self.times):
             new_outputs = {blocks[1]: outputs[blocks[1]]}  # {'0': inp}
             for block in blocks[1:]:
@@ -168,14 +186,22 @@ def get_blt_model(model_name, pretrained=False, map_location=None, **kwargs):
     if num_layers == 4:
         layer_channels  = {'inp':img_channels, '0':64, '1':128, '2':256, '3':512}
         out_shape  = {'0':56, '1':28, '2':14, '3':7}
+        # layer_channels  = {'inp':img_channels, '0':128, '1':384, '2':512, '3':512}
+        # out_shape  = {'0':112, '1':56, '2':28, '3':14}
     elif num_layers == 5:
         layer_channels = {'inp':img_channels, '0':64, '1':128, '2':128, '3':256, '4':512}
         out_shape  = {'0':56, '1':28, '2':14, '3':7, '4':7}
     elif num_layers == 6:
         # layer_channels = {'inp':img_channels, '0':64, '1':64, '2':128, '3':128, '4':256, '5':512}
         # out_shape  = {'0':56, '1':28, '2':14, '3':14, '4':7, '5':7}
-        layer_channels = {'inp':img_channels, '0':64, '1':128, '2':128, '3':128, '4':256, '5':512}
-        out_shape  = {'0':112, '1':56, '2':28, '3':14, '4':7, '5':7}
+        layer_channels = {'inp':img_channels, '0':64, '1':128, '2':256, '3':256, '4':512, '5':512}
+        out_shape  = {'0':112, '1':56, '2':28, '3':28, '4':14, '5':7}
+    elif num_layers == 8:
+        # layer_channels = {'inp':img_channels, '0':64, '1':64, '2':128, '3':128, '4':256, '5':512}
+        # out_shape  = {'0':56, '1':28, '2':14, '3':14, '4':7, '5':7}
+        layer_channels = {'inp':img_channels, '0':64, '1':128, '2':128, '3':256, '4':256, '5':256, '6':256, '7':512}
+        out_shape  = {'0':112, '1':56, '2':28, '3':28, '4':7, '5':7, '6':7, '7':7}
+
 
     num_layers = len(list(layer_channels.keys())) - 1                         
     conn_matrix = np.zeros((num_layers, num_layers))
@@ -195,5 +221,5 @@ def get_blt_model(model_name, pretrained=False, map_location=None, **kwargs):
                 if i == (j+s):
                     conn_matrix[i, j] = 1
 
-    model = blt(conn_matrix, num_classes, layer_channels, out_shape, times)
+    model = blt(model_name, conn_matrix, num_classes, layer_channels, out_shape, times)
     return model

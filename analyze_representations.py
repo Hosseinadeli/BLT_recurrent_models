@@ -139,14 +139,14 @@ def sample_FEI_dataset(num_ids=25):
 import scipy.io
 
 def kasper_dataset():
-    mat = scipy.io.loadmat('./datasets/dataset_face_paper/images.mat')
+    mat = scipy.io.loadmat('./datasets/saved_data/images.mat')
     imarray = mat['imarray']
 
-    neuro_mat = scipy.io.loadmat('./datasets/dataset_face_paper/neural.mat')
+    neuro_mat = scipy.io.loadmat('./datasets/saved_data/neural.mat')
     neuro_data = neuro_mat['R'].transpose()
 
     try:
-        imgs = torch.load('./datasets/dataset_face_paper/imgs_kasper.pt')
+        imgs = torch.load('./datasets/saved_data/imgs_kasper.pt')
     except:
         normalize = torchvision.transforms.Compose([
             torchvision.transforms.ToTensor(),
@@ -383,14 +383,13 @@ def plot_rdm_mds(model, imgs, labels, layers, num_steps=5, plot='rdm mds', cmap 
 from models.build_model import build_model
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def load_model_path(model_path):
+def load_model_path(model_path, print_model=False):
 
     checkpoint = torch.load(model_path + 'checkpoint.pth', map_location='cpu')
 
     pretrained_dict = checkpoint['model']
     args = checkpoint['args']
-    args.num_layers = 4
-    model = build_model(args)
+    model = build_model(args, verbose=print_model)
     model.load_state_dict(pretrained_dict)
     model.to(device)
 

@@ -70,7 +70,7 @@ def get_args_parser():
 
     parser.add_argument('--num_workers', default=4, type=int,
                         help='number of data loading num_workers')
-    parser.add_argument('--epochs', default=20, type=int,
+    parser.add_argument('--epochs', default=100, type=int,
                         help='number of total epochs to run')
     parser.add_argument('--batch_size', default=128, type=int,
                         help='mini-batch size')
@@ -104,7 +104,7 @@ def get_args_parser():
     
     parser.add_argument('--save_model', default=0, type=int) 
 
-    parser.add_argument('--distributed', default=True,
+    parser.add_argument('--distributed', default=1, type=int,
                         help='whether to use distributed training')
     parser.add_argument('--port', default='12382', type=str,
                         help='MASTER_PORT for torch.distributed')
@@ -125,7 +125,7 @@ class SetCriterion(nn.Module):
 
 def main(rank, world_size, args):
 
-    if args.distributed:
+    if args.distributed == 1:
         args.rank = rank
         args.world_size = world_size
         utils.init_distributed_mode(args)
@@ -144,7 +144,7 @@ def main(rank, world_size, args):
     model = model.cuda() 
 
     model_ddp = model
-    if args.distributed:
+    if args.distributed == 1:
         model_ddp = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], 
                                                               find_unused_parameters=True)
         
@@ -277,7 +277,7 @@ if __name__ == '__main__':
     if args.output_path:
         Path(args.output_path).mkdir(parents=True, exist_ok=True)
 
-    if args.distributed:
+    if args.distributed == 1:
         args.world_size = torch.cuda.device_count()
         mp.spawn(main, args=(args.world_size, args), nprocs=args.world_size)
     else:

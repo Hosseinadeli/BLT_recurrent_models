@@ -4,7 +4,6 @@ import collections
 import os
 
 import numpy as np
-#import PIL.Image
 from PIL import Image, ImageOps 
 import scipy.io
 import torch

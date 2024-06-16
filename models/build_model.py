@@ -1,7 +1,7 @@
 from models.cornet import get_cornet_model
 from models.blt import get_blt_model
 
-def build_model(args, pretrained=False, verbose=False):
+def build_model(args, pretrained=False, verbose=True):
 
     args.img_channels = 3
     if 'blt' in args.model:
