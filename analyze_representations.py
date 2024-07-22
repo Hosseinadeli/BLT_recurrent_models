@@ -145,16 +145,17 @@ def kasper_dataset():
     neuro_mat = scipy.io.loadmat('./datasets/saved_data/neural.mat')
     neuro_data = neuro_mat['R'].transpose()
 
-    try:
-        imgs = torch.load('./datasets/saved_data/imgs_kasper.pt')
-    except:
-        normalize = torchvision.transforms.Compose([
-            torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ])
+    imgs = torch.load('./datasets/saved_data/imgs_kasper.pt')
 
+    # try:
+    #     imgs = torch.load('./datasets/saved_data/imgs_kasper.pt')
+    # except:
+    #     normalize = torchvision.transforms.Compose([
+    #         torchvision.transforms.ToTensor(),
+    #         torchvision.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    #     ])
+    #     imgs = torch.stack([normalize(img) for img in np.moveaxis(imarray, -1, 0)])   
 
-        imgs = torch.stack([normalize(img) for img in np.moveaxis(imarray, -1, 0)])   
     # imgs.shape
     labels = mat['imsets'].squeeze() - 1  #(array([0, 1, 2], dtype=uint8), array([230, 217, 932]))
 
@@ -223,7 +224,7 @@ def plot_maps(model_features, save=None, cmap = 'magma', add_text=True, add_bar=
         if add_text:
             ax.text(0.5, 1.15, f'{layer}', size=12, ha="center", transform=ax.transAxes)
         ax.axis("off")
-        #ax.set_title(f'{layer}')
+        ax.set_title(f'{layer}')
 
     fig.subplots_adjust(right=0.9)
     if add_bar:
@@ -390,7 +391,7 @@ def load_model_path(model_path, print_model=False):
     pretrained_dict = checkpoint['model']
     args = checkpoint['args']
     model = build_model(args, verbose=print_model)
-    model.load_state_dict(pretrained_dict)
+    model.load_state_dict(pretrained_dict, strict=False)
     model.to(device)
 
     model.eval()
@@ -435,9 +436,11 @@ def extract_features(model, imgs, layer, num_steps=5):
     output = output.reshape(*output.shape[:3], -1).mean(-1)
 
     features = {}
-
+    average_features = []
     for t in range(len(output)-num_steps,len(output)):
         features[f'step {t}'] = output[t]
+        average_features.append(output[t] / np.max(output[t]))
 
+    features['average'] = np.mean(average_features, axis=0)
     return features
 

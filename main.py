@@ -63,7 +63,7 @@ def get_args_parser():
     parser.add_argument('--objective', choices=['classification', 'contrastive'],
                         default='classification', help='which model to train')
 
-    parser.add_argument('--recurrent_steps', default=8, type=int,
+    parser.add_argument('--recurrent_steps', default=10, type=int,
                         help='number of time steps to run the model (only R model)')
     parser.add_argument('--num_layers', default=4, type=int,
                         help='number of time steps to run the model (only R model)')
@@ -78,7 +78,7 @@ def get_args_parser():
                         help='initial learning rate')
     parser.add_argument('--weight_decay', default=1e-4, type=float,
                         help='weight decay ')
-    parser.add_argument('--lr_drop', default=200, type=int)
+    parser.add_argument('--lr_drop', default=100, type=int)
     parser.add_argument('--clip_max_norm', default=0.1, type=float,
                         help='gradient clipping max norm')
     
@@ -186,7 +186,7 @@ def main(rank, world_size, args):
 
         optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
                                       weight_decay=args.weight_decay)
-        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop, gamma=0.5)
 
         args.start_epoch = 0
 
@@ -215,7 +215,6 @@ def main(rank, world_size, args):
                 "learning_rate": args.lr,
                 "architecture": f'{args.model}',
                 "epochs": args.epochs,
-                
                 })
 
         with open(os.path.join(args.save_dir, 'params.txt'), 'w') as f:

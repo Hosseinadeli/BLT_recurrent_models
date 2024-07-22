@@ -51,8 +51,8 @@ class blt(nn.Module):
             for j in range(num_layers):
                 if not conn_matrix[i,j]: continue
 
-                setattr(self, f'norm_{i}_{j}', nn.GroupNorm(32, self.layer_channels[f'{j}']))
-                setattr(self, f'non_lin_{i}_{j}', nn.ReLU(inplace=True))
+                # setattr(self, f'norm_{i}_{j}', nn.GroupNorm(32, self.layer_channels[f'{j}']))
+                # setattr(self, f'non_lin_{i}_{j}', nn.ReLU(inplace=True))
 
                 # bottom-up or lateral connection
                 if i <= j:
@@ -150,8 +150,8 @@ class blt(nn.Module):
                 for i in np.where(in_blocks)[0]: 
                     if outputs[f'{i}'] is not None:
                         input = getattr(self, f'conv_{i}_{block}')(outputs[f'{i}'])
-                        input = getattr(self, f'norm_{i}_{block}')(input)
-                        input = getattr(self, f'non_lin_{i}_{block}')(input)
+                        # input = getattr(self, f'norm_{i}_{block}')(input)
+                        # input = getattr(self, f'non_lin_{i}_{block}')(input)
                         conn_input += input
                 
 
@@ -192,10 +192,10 @@ def get_blt_model(model_name, pretrained=False, map_location=None, **kwargs):
         layer_channels = {'inp':img_channels, '0':64, '1':128, '2':128, '3':256, '4':512}
         out_shape  = {'0':56, '1':28, '2':14, '3':7, '4':7}
     elif num_layers == 6:
-        # layer_channels = {'inp':img_channels, '0':64, '1':64, '2':128, '3':128, '4':256, '5':512}
-        # out_shape  = {'0':56, '1':28, '2':14, '3':14, '4':7, '5':7}
-        layer_channels = {'inp':img_channels, '0':64, '1':128, '2':256, '3':256, '4':512, '5':512}
-        out_shape  = {'0':112, '1':56, '2':28, '3':28, '4':14, '5':7}
+        layer_channels = {'inp':img_channels, '0':64, '1':64, '2':128, '3':128, '4':256, '5':512}
+        out_shape  = {'0':56, '1':28, '2':14, '3':14, '4':7, '5':7}
+        # layer_channels = {'inp':img_channels, '0':64, '1':128, '2':256, '3':256, '4':512, '5':512}
+        # out_shape  = {'0':112, '1':56, '2':28, '3':28, '4':14, '5':7}
     elif num_layers == 8:
         # layer_channels = {'inp':img_channels, '0':64, '1':64, '2':128, '3':128, '4':256, '5':512}
         # out_shape  = {'0':56, '1':28, '2':14, '3':14, '4':7, '5':7}
@@ -217,7 +217,7 @@ def get_blt_model(model_name, pretrained=False, map_location=None, **kwargs):
         for j in range(num_layers):
             for s in shift:
                 # just add other connections for the last 4 layers
-                if (s != -1) and ((i<(num_layers-4)) or (j<(num_layers-4))): continue 
+                # if (s != -1) and ((i<(num_layers-4)) or (j<(num_layers-4))): continue 
                 if i == (j+s):
                     conn_matrix[i, j] = 1
 
