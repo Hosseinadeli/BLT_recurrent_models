@@ -51,7 +51,7 @@ def get_args_parser():
     parser.add_argument('--output_path', default='./results/', type=str,
                         help='path for storing ')
     
-    parser.add_argument('--model', choices=['blt_b', 'blt_b2', 'blt_b3', 'blt_bl', 'blt_b2l',
+    parser.add_argument('--model', choices=['blt_b', 'blt_b_pm', 'blt_b2', 'blt_b3', 'blt_bl', 'blt_b2l',
                                             'blt_b3l', 'blt_bt', 'blt_b2t', 'blt_b3t', 'blt_blt',
                                             'blt_b2lt', 'blt_b3lt', 'blt_bt2', 'blt_b2t2', 
                                             'blt_b3t2', 'blt_blt2', 'blt_b2lt2', 'blt_b3lt2',
@@ -62,6 +62,9 @@ def get_args_parser():
     
     parser.add_argument('--objective', choices=['classification', 'contrastive'],
                         default='classification', help='which model to train')
+    
+    parser.add_argument('--loss_gamma', default=.5, type=float, 
+                        help='whether to have loss in earlier steps of the readout')
 
     parser.add_argument('--recurrent_steps', default=10, type=int,
                         help='number of time steps to run the model (only R model)')
@@ -113,13 +116,22 @@ def get_args_parser():
 
 
 class SetCriterion(nn.Module):
-    def __init__(self):
+    def __init__(self, args):
         super().__init__()
         self.weight_dict = {'loss_labels': 1}
+        self.loss_gamma = args.loss_gamma
+        self.loss_func = nn.CrossEntropyLoss()
 
     def forward(self, outputs, targets):
 
-        loss = F.cross_entropy(outputs, targets)
+        loss = 0
+        if self.loss_gamma > 0:
+            for s in range(len(outputs)):
+                loss += (self.loss_gamma**s) * self.loss_func(outputs[-(s+1)], targets)
+
+        else: 
+            loss = self.loss_func(outputs[-1], targets)
+
         losses = {'loss_labels': loss}
         return losses
 
@@ -148,7 +160,7 @@ def main(rank, world_size, args):
         model_ddp = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], 
                                                               find_unused_parameters=True)
         
-    criterion = SetCriterion()
+    criterion = SetCriterion(args)
     
     if args.output_path:
         args.save_dir = args.output_path + f'{args.objective}/{args.dataset}/{args.model}/run_{args.run}'

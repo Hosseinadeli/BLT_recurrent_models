@@ -124,8 +124,8 @@ class blt(nn.Module):
         for block in blocks[2:]:
             outputs[block] = None
 
-        # if the model is blt_b then we don't need to iterate over time steps
-        if self.model_name == 'b':
+        # if the model is b then we don't need to iterate over time steps
+        if self.model_name == 'b' or self.model_name == 'b_pm':
             for block in blocks[2:]:
                 in_blocks =  self.conn_matrix[:,int(block)] 
                 i = np.where(in_blocks)[0][0]
@@ -136,8 +136,9 @@ class blt(nn.Module):
                 outputs[block] = new_output
 
             out = outputs[blocks[-1]]
-            return self.read_out(out)
+            return [self.read_out(out)] # make a list to make it cosistent with the recurrent model
 
+        all_outs = []
         # iterate over time steps
         for t in range(1, self.times):
             new_outputs = {blocks[1]: outputs[blocks[1]]}  # {'0': inp}
@@ -154,7 +155,6 @@ class blt(nn.Module):
                         # input = getattr(self, f'non_lin_{i}_{block}')(input)
                         conn_input += input
                 
-
                 if output_prev_step is not None:
                     new_output = output_prev_step + conn_input
                 elif conn_input is not 0:
@@ -171,9 +171,10 @@ class blt(nn.Module):
                 new_outputs[block] = new_output
                 
             outputs = new_outputs
+            if outputs[blocks[-1]] is not None:
+                all_outs.append(self.read_out(outputs[blocks[-1]]))
 
-        out = outputs[blocks[-1]]
-        return self.read_out(out)
+        return all_outs
 
 
 def get_blt_model(model_name, pretrained=False, map_location=None, **kwargs):
@@ -188,14 +189,20 @@ def get_blt_model(model_name, pretrained=False, map_location=None, **kwargs):
         out_shape  = {'0':56, '1':28, '2':14, '3':7}
         # layer_channels  = {'inp':img_channels, '0':128, '1':384, '2':512, '3':512}
         # out_shape  = {'0':112, '1':56, '2':28, '3':14}
+
     elif num_layers == 5:
         layer_channels = {'inp':img_channels, '0':64, '1':128, '2':128, '3':256, '4':512}
         out_shape  = {'0':56, '1':28, '2':14, '3':7, '4':7}
+
     elif num_layers == 6:
         layer_channels = {'inp':img_channels, '0':64, '1':64, '2':128, '3':128, '4':256, '5':512}
         out_shape  = {'0':56, '1':28, '2':14, '3':14, '4':7, '5':7}
-        # layer_channels = {'inp':img_channels, '0':64, '1':128, '2':256, '3':256, '4':512, '5':512}
-        # out_shape  = {'0':112, '1':56, '2':28, '3':28, '4':14, '5':7}
+
+        # we can paramter match a 6 layer b model with a 4 layer bl model (~ 6.5 m)
+        if 'b_pm' in model_name:
+            layer_channels = {'inp':img_channels, '0':64, '1':128, '2':256, '3':256, '4':512, '5':512}
+            out_shape  = {'0':112, '1':56, '2':28, '3':28, '4':14, '5':7}
+
     elif num_layers == 8:
         # layer_channels = {'inp':img_channels, '0':64, '1':64, '2':128, '3':128, '4':256, '5':512}
         # out_shape  = {'0':56, '1':28, '2':14, '3':14, '4':7, '5':7}
