@@ -63,6 +63,9 @@ def get_args_parser():
     parser.add_argument('--objective', choices=['classification', 'contrastive'],
                         default='classification', help='which model to train')
     
+    parser.add_argument('--loss_choice', choices=['weighted', 'decay'] 
+                        , default='decay', type=str, 
+                        help='how to apply loss to earlier readout layers')  
     parser.add_argument('--loss_gamma', default=.5, type=float, 
                         help='whether to have loss in earlier steps of the readout')
 
@@ -121,17 +124,24 @@ class SetCriterion(nn.Module):
         self.weight_dict = {'loss_labels': 1}
         self.loss_gamma = args.loss_gamma
         self.loss_func = nn.CrossEntropyLoss()
+        self.loss_choice = args.loss_choice
 
     def forward(self, outputs, targets):
 
         loss = 0
+        weight_sum = 1
+        loss = self.loss_func(outputs[-1], targets)
+
         if self.loss_gamma > 0:
-            for s in range(len(outputs)):
-                loss += (self.loss_gamma**s) * self.loss_func(outputs[-(s+1)], targets)
+            for s in range(1,len(outputs)):
+                if self.loss_choice == 'decay':
+                    weight = self.loss_gamma**s
+                elif self.loss_choice == 'weighted':
+                    weight = self.loss_gamma
+                weight_sum += weight
+                loss += weight * self.loss_func(outputs[-(s+1)], targets)
 
-        else: 
-            loss = self.loss_func(outputs[-1], targets)
-
+        loss = loss / weight_sum
         losses = {'loss_labels': loss}
         return losses
 

@@ -196,7 +196,7 @@ def get_blt_model(model_name, pretrained=False, map_location=None, **kwargs):
 
     elif num_layers == 6:
         layer_channels = {'inp':img_channels, '0':64, '1':64, '2':128, '3':128, '4':256, '5':512}
-        out_shape  = {'0':56, '1':28, '2':14, '3':14, '4':7, '5':7}
+        out_shape  = {'0':56, '1':56, '2':28, '3':28, '4':14, '5':7}
 
         # we can paramter match a 6 layer b model with a 4 layer bl model (~ 6.5 m)
         if 'b_pm' in model_name:
