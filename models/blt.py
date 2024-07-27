@@ -40,8 +40,8 @@ class blt(nn.Module):
             self.conv_input = nn.Conv2d(self.layer_channels['inp'], self.layer_channels['0'], 
                                         kernel_size=5, stride=2, padding=2) 
 
-        self.non_lin_input =  nn.ReLU(inplace=True)
-        self.norm_input = nn.GroupNorm(32, self.layer_channels['0'])
+        # self.non_lin_input =  nn.ReLU(inplace=True)
+        # self.norm_input = nn.GroupNorm(32, self.layer_channels['0'])
 
         # define all the connections between the layers
         for i in range(num_layers):
@@ -118,8 +118,8 @@ class blt(nn.Module):
         blocks = list(self.layer_channels.keys()) #['inp', '0', '1', '2', '3']
 
         inp = self.conv_input(inp)
-        inp = self.norm_input(inp)
-        inp = self.non_lin_input(inp)
+        # inp = self.norm_input(inp)
+        # inp = self.non_lin_input(inp)
         outputs[blocks[1]] = getattr(self, f'output_{blocks[1]}')(inp)
         for block in blocks[2:]:
             outputs[block] = None
@@ -144,7 +144,7 @@ class blt(nn.Module):
             new_outputs = {blocks[1]: outputs[blocks[1]]}  # {'0': inp}
             for block in blocks[1:]:
 
-                output_prev_step = outputs[block]
+                #output_prev_step = outputs[block]
                 
                 conn_input = 0
                 in_blocks =  self.conn_matrix[:,int(block)] 
@@ -155,9 +155,9 @@ class blt(nn.Module):
                         # input = getattr(self, f'non_lin_{i}_{block}')(input)
                         conn_input += input
                 
-                if output_prev_step is not None:
-                    new_output = output_prev_step + conn_input
-                elif conn_input is not 0:
+                # if output_prev_step is not None:
+                #     new_output = output_prev_step + conn_input
+                if conn_input is not 0:
                     new_output = conn_input
                 else:
                     new_output = None
