@@ -71,6 +71,18 @@ class blt(nn.Module):
                     elif shape_factor == 16:
                         cnn_kwargs = dict(kernel_size=17, stride=16, padding=8)
 
+
+                    # if shape_factor == 1:
+                    #     cnn_kwargs = dict(kernel_size=3, stride=1, padding=1)
+                    # elif shape_factor == 2:
+                    #     cnn_kwargs = dict(kernel_size=5, stride=2, padding=2)
+                    # elif shape_factor == 4:
+                    #     cnn_kwargs = dict(kernel_size=9, stride=4, padding=4)
+                    # elif shape_factor == 8:
+                    #     cnn_kwargs = dict(kernel_size=13, stride=8, padding=6)
+                    # elif shape_factor == 16:
+                    #     cnn_kwargs = dict(kernel_size=17, stride=16, padding=8)
+
                     conn =  nn.Conv2d(self.layer_channels[f'{i}'], 
                                       self.layer_channels[f'{j}'], 
                                       **cnn_kwargs)
@@ -115,12 +127,10 @@ class blt(nn.Module):
     def forward(self, inp):
         outputs = {} #'inp': inp
         states = {}
-        blocks = list(self.layer_channels.keys()) #['inp', '0', '1', '2', '3']
+        blocks = list(self.layer_channels.keys()) #['inp', '0', '1', '2', '3', '4', '5']
 
         inp = self.conv_input(inp)
-        # inp = self.norm_input(inp)
-        # inp = self.non_lin_input(inp)
-        outputs[blocks[1]] = getattr(self, f'output_{blocks[1]}')(inp)
+        outputs[blocks[1]] = getattr(self, f'output_{blocks[1]}')(self.non_lin_0(self.norm_0(inp)))
         for block in blocks[2:]:
             outputs[block] = None
 
@@ -154,10 +164,14 @@ class blt(nn.Module):
                         # input = getattr(self, f'norm_{i}_{block}')(input)
                         # input = getattr(self, f'non_lin_{i}_{block}')(input)
                         conn_input += input
+                        if block == '0':
+                            conn_input += inp
                 
                 # if output_prev_step is not None:
                 #     new_output = output_prev_step + conn_input
+                
                 if conn_input is not 0:
+                    # This will only be False before a layer gets its first input
                     new_output = conn_input
                 else:
                     new_output = None
