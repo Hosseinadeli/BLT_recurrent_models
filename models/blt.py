@@ -35,10 +35,13 @@ class blt(nn.Module):
 
         if out_shape['0'] == 56:
             self.conv_input = nn.Conv2d(self.layer_channels['inp'], self.layer_channels['0'], 
-                                        kernel_size=7, stride=4, padding=3) # 5/2  7/4
+                                        kernel_size=7, stride=2, padding=3) # 5/2  7/4
+            
         elif out_shape['0'] == 112:
             self.conv_input = nn.Conv2d(self.layer_channels['inp'], self.layer_channels['0'], 
-                                        kernel_size=5, stride=2, padding=2) 
+                                        kernel_size=5, stride=1, padding=2) 
+
+        self.maxpool_input = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
         # self.non_lin_input =  nn.ReLU(inplace=True)
         # self.norm_input = nn.GroupNorm(32, self.layer_channels['0'])
@@ -56,20 +59,23 @@ class blt(nn.Module):
 
                 # bottom-up or lateral connection
                 if i <= j:
-                    conn_len = j - i
-
                     shape_factor = out_shape[f'{i}'] // out_shape[f'{j}'] 
-                    
-                    if shape_factor == 1:
-                        cnn_kwargs = dict(kernel_size=3, stride=1, padding=1)
-                    elif shape_factor == 2:
-                        cnn_kwargs = dict(kernel_size=3, stride=2, padding=1)
-                    elif shape_factor == 4:
-                        cnn_kwargs = dict(kernel_size=5, stride=4, padding=2)
-                    elif shape_factor == 8:
-                        cnn_kwargs = dict(kernel_size=9, stride=8, padding=4)
-                    elif shape_factor == 16:
-                        cnn_kwargs = dict(kernel_size=17, stride=16, padding=8)
+
+                    if out_shape[f'{i}'] == 1 or out_shape[f'{j}'] == 1:
+                        cnn_kwargs = dict(kernel_size=1, stride=1, padding=0)
+
+                    else:
+                        
+                        if shape_factor == 1:
+                            cnn_kwargs = dict(kernel_size=3, stride=1, padding=1)
+                        elif shape_factor == 2:
+                            cnn_kwargs = dict(kernel_size=3, stride=1, padding=1)
+                        elif shape_factor == 4:
+                            cnn_kwargs = dict(kernel_size=5, stride=2, padding=2)
+                        elif shape_factor == 8:
+                            cnn_kwargs = dict(kernel_size=9, stride=4, padding=4)
+                        elif shape_factor == 16:
+                            cnn_kwargs = dict(kernel_size=17, stride=8, padding=8)
 
 
                     # if shape_factor == 1:
@@ -83,15 +89,34 @@ class blt(nn.Module):
                     # elif shape_factor == 16:
                     #     cnn_kwargs = dict(kernel_size=17, stride=16, padding=8)
 
-                    conn =  nn.Conv2d(self.layer_channels[f'{i}'], 
+                    conv =  nn.Conv2d(self.layer_channels[f'{i}'], 
                                       self.layer_channels[f'{j}'], 
                                       **cnn_kwargs)
+                                        
+                    # apply avgpooling if the output shape is 1 and the input shape is not 1
+                    print(out_shape[f'{i}'], out_shape[f'{j}'])
+
+                    if shape_factor > 1:
+                        if out_shape[f'{i}'] != 1 and out_shape[f'{j}'] == 1:
+                            print('applying avgpool')
+                            conn = nn.Sequential(OrderedDict([
+                                ('avgpool', nn.AdaptiveAvgPool2d(1)),
+                                ('conv', conv)
+                            ]))
+                        else:
+                            conn = nn.Sequential(OrderedDict([
+                            ('maxpool', nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
+                            ('conv', conv),
+                        ]))
+                    else:
+                        conn = conv
+
                     
                     setattr(self, f'conv_{i}_{j}', conn)
 
                 # top-down connections
                 elif i > j:
-                    conn_len = i - j
+
                     shape_factor = out_shape[f'{j}'] // out_shape[f'{i}'] 
 
                     if shape_factor == 1:
@@ -116,6 +141,7 @@ class blt(nn.Module):
 
                     setattr(self, f'conv_{i}_{j}', conn)
                     
+        # self.gap = nn.AdaptiveAvgPool2d(1)
 
         self.read_out = nn.Sequential(OrderedDict([
             ('avgpool', nn.AdaptiveAvgPool2d(1)),
@@ -130,12 +156,13 @@ class blt(nn.Module):
         blocks = list(self.layer_channels.keys()) #['inp', '0', '1', '2', '3', '4', '5']
 
         inp = self.conv_input(inp)
+        inp = self.maxpool_input(inp)
         outputs[blocks[1]] = getattr(self, f'output_{blocks[1]}')(self.non_lin_0(self.norm_0(inp)))
         for block in blocks[2:]:
             outputs[block] = None
 
         # if the model is b then we don't need to iterate over time steps
-        if self.model_name == 'b' or self.model_name == 'b_pm':
+        if self.model_name=='b':
             for block in blocks[2:]:
                 in_blocks =  self.conn_matrix[:,int(block)] 
                 i = np.where(in_blocks)[0][0]
@@ -164,8 +191,9 @@ class blt(nn.Module):
                         # input = getattr(self, f'norm_{i}_{block}')(input)
                         # input = getattr(self, f'non_lin_{i}_{block}')(input)
                         conn_input += input
-                        if block == '0':
-                            conn_input += inp
+
+                if block == '0':
+                    conn_input += inp
                 
                 # if output_prev_step is not None:
                 #     new_output = output_prev_step + conn_input
@@ -212,6 +240,11 @@ def get_blt_model(model_name, pretrained=False, map_location=None, **kwargs):
         layer_channels = {'inp':img_channels, '0':64, '1':64, '2':128, '3':128, '4':256, '5':512}
         out_shape  = {'0':56, '1':56, '2':28, '3':28, '4':14, '5':7}
 
+        # if we have two linear layer after 4 conv layers
+        if 'top2linear' in model_name:
+            layer_channels  = {'inp':img_channels, '0':64, '1':128, '2':256, '3':512, '4':2048 , '5':512}
+            out_shape  = {'0':56, '1':28, '2':14, '3':7, '4':1, '5':1}
+
         # we can paramter match a 6 layer b model with a 4 layer bl model (~ 6.5 m)
         if 'b_pm' in model_name:
             layer_channels = {'inp':img_channels, '0':64, '1':128, '2':256, '3':256, '4':512, '5':512}
@@ -226,6 +259,9 @@ def get_blt_model(model_name, pretrained=False, map_location=None, **kwargs):
 
     num_layers = len(list(layer_channels.keys())) - 1                         
     conn_matrix = np.zeros((num_layers, num_layers))
+
+    # make the model name only the architecture name
+    model_name = model_name.split('_')[0]
 
     shift = [-1]  # this corresponds to bottom up connections -- always present
     if 'l' in model_name: shift = shift + [0]

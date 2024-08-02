@@ -51,7 +51,8 @@ def get_args_parser():
     parser.add_argument('--output_path', default='./results/', type=str,
                         help='path for storing ')
     
-    parser.add_argument('--model', choices=['blt_b', 'blt_b_pm', 'blt_b2', 'blt_b3', 'blt_bl', 'blt_b2l',
+    parser.add_argument('--model', choices=['blt_b', 'blt_b_pm', 'blt_b_top2linear', 'blt_b2', 
+                                            'blt_b3', 'blt_bl', 'blt_bl_top2linear', 'blt_b2l',
                                             'blt_b3l', 'blt_bt', 'blt_b2t', 'blt_b3t', 'blt_blt',
                                             'blt_b2lt', 'blt_b3lt', 'blt_bt2', 'blt_b2t2', 
                                             'blt_b3t2', 'blt_blt2', 'blt_b2lt2', 'blt_b3lt2',
@@ -101,7 +102,7 @@ def get_args_parser():
                          type=str, help='path to ImageNet folder')
     parser.add_argument('--image_size', default=224, type=int, 
                         help='what size should the image be resized to?')
-    parser.add_argument('--horizontal_flip', default=True,
+    parser.add_argument('--horizontal_flip', default=False, type=bool,
                     help='wether to use horizontal flip augmentation')
     parser.add_argument('--run', default=1, type=int) 
     
