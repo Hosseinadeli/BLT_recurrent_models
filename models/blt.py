@@ -15,8 +15,26 @@ class Flatten(nn.Module):
     """
     Helper module for flattening input tensor to 1-D for the use in Linear modules
     """
+    def __init__(self, unsqueeze=False):
+        super().__init__()
+        self.unsqueeze = unsqueeze
+
     def forward(self, x):
-        return x.view(x.size(0), -1)
+        if self.unsqueeze:
+            return x.view(x.size(0), -1).unsqueeze(-1)
+        else:
+            return x.view(x.size(0), -1)
+
+
+class Unsqueeze(nn.Module):
+    def __init__(self, dim):
+        super(Unsqueeze, self).__init__()
+        self.dim = dim
+
+    def forward(self, x):
+        return x.view(x.size(0), x.size(1), 1, 1)
+
+
 
 # BLT
 
@@ -78,6 +96,10 @@ class blt(nn.Module):
                             cnn_kwargs = dict(kernel_size=17, stride=8, padding=8)
 
 
+                    conv =  nn.Conv2d(self.layer_channels[f'{i}'], 
+                                      self.layer_channels[f'{j}'], 
+                                      **cnn_kwargs)
+                    
                     # if shape_factor == 1:
                     #     cnn_kwargs = dict(kernel_size=3, stride=1, padding=1)
                     # elif shape_factor == 2:
@@ -89,27 +111,34 @@ class blt(nn.Module):
                     # elif shape_factor == 16:
                     #     cnn_kwargs = dict(kernel_size=17, stride=16, padding=8)
 
-                    conv =  nn.Conv2d(self.layer_channels[f'{i}'], 
-                                      self.layer_channels[f'{j}'], 
-                                      **cnn_kwargs)
+                    print(out_shape[f'{i}'], out_shape[f'{j}'], shape_factor)
                                         
                     # apply avgpooling if the output shape is 1 and the input shape is not 1
-                    print(out_shape[f'{i}'], out_shape[f'{j}'])
-
                     if shape_factor > 1:
                         if out_shape[f'{i}'] != 1 and out_shape[f'{j}'] == 1:
-                            print('applying avgpool')
                             conn = nn.Sequential(OrderedDict([
-                                ('avgpool', nn.AdaptiveAvgPool2d(1)),
-                                ('conv', conv)
+                                ('maxpool', nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
+                                ('flatten', Flatten()),
+                                ('linear', nn.Linear(512*4*4, self.layer_channels[f'{j}'])),
+                                ('Unsqueeze', Unsqueeze(2)),
+                                #('avgpool', nn.AdaptiveAvgPool2d(1)),
+                                #('conv', conv)
                             ]))
+
                         else:
                             conn = nn.Sequential(OrderedDict([
                             ('maxpool', nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
                             ('conv', conv),
                         ]))
                     else:
-                        conn = conv
+                        if out_shape[f'{i}'] == 1 and out_shape[f'{j}'] == 1:
+                            conn = nn.Sequential(OrderedDict([
+                                ('flatten', Flatten()),
+                                ('linear', nn.Linear(self.layer_channels[f'{i}'], self.layer_channels[f'{j}'])),
+                                ('Unsqueeze', Unsqueeze(2)),
+                            ]))
+                        else:
+                            conn = conv
 
                     
                     setattr(self, f'conv_{i}_{j}', conn)
@@ -242,7 +271,7 @@ def get_blt_model(model_name, pretrained=False, map_location=None, **kwargs):
 
         # if we have two linear layer after 4 conv layers
         if 'top2linear' in model_name:
-            layer_channels  = {'inp':img_channels, '0':64, '1':128, '2':256, '3':512, '4':2048 , '5':512}
+            layer_channels  = {'inp':img_channels, '0':64, '1':128, '2':256, '3':512, '4':1024 , '5':512}
             out_shape  = {'0':56, '1':28, '2':14, '3':7, '4':1, '5':1}
 
         # we can paramter match a 6 layer b model with a 4 layer bl model (~ 6.5 m)

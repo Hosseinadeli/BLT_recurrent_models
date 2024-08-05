@@ -11,6 +11,8 @@ import matplotlib as mpl
 from PIL import Image
 from models.cornet import get_cornet_model
 
+from repsim import AngularCKA
+
 import torch
 import torch.nn as nn
 from models.activations import get_activations_batch
@@ -89,7 +91,7 @@ def sample_vggface2(num_cats=5, per_cat=10):
 
 def sample_FEI_dataset(num_ids=25):
     root = '/engram/nklab/hossein/recurrent_models/face_datasets/'
-    split_folder = 'FEI_part1'
+    split_folder = 'FEI'
     split_dir = root + split_folder + '/'
     dir_list = os.listdir(split_dir)
 
@@ -174,6 +176,14 @@ def calc_rdms(model_features, method='euclidean'):
     - rdms (numpy.ndarray): Representational Dissimilarity Matrices Objects.
     - rdms_dict (dict): Dictionary containing RDMs for each layer.
     """
+    
+    if method == 'cka':
+        metric = AngularCKA(m=len(model_features[list(model_features.keys())[0]]))
+        rdms_dict = {k: metric.neural_data_to_point(torch.tensor(x)).numpy() for k, x in model_features.items()}
+        print(rdms_dict.keys())
+        print(rdms_dict['step 4'].shape)
+        
+        return None, rdms_dict
 
     ds_list = []
     for l in range(len(model_features)):
@@ -223,20 +233,21 @@ def plot_maps(model_features, save=None, cmap = 'magma', add_text=True, add_bar=
         ax_ = ax.imshow(map_, cmap=cmap)
         if add_text:
             ax.text(0.5, 1.15, f'{layer}', size=12, ha="center", transform=ax.transAxes)
+            #ax.set_title(f'{layer}')
         ax.axis("off")
-        ax.set_title(f'{layer}')
-
-    fig.subplots_adjust(right=0.9)
+        
+    
     if add_bar:
+        fig.subplots_adjust(right=0.9)
         cbar_ax = fig.add_axes([0.95, 0.25, 0.01, 0.5])
-    fig.colorbar(ax_, cax=cbar_ax)
+        fig.colorbar(ax_, cax=cbar_ax)
 
-    if save:
-        fig.savefig(f'{save}.svg', format='svg', dpi=300, bbox_inches='tight')
+    # if save:
+    #     fig.savefig(f'{save}.svg', format='svg', dpi=300, bbox_inches='tight')
 
     return fig
 
-def compare_rdms(model, imgs, layers, neuro_data, num_steps=5):
+def compare_rdms(model, imgs, layers, neuro_data, method='corr', num_steps=5):
 
     neuro_rdms, _ = calc_rdms(neuro_data)
 
@@ -253,7 +264,10 @@ def compare_rdms(model, imgs, layers, neuro_data, num_steps=5):
             pred_model_names.append(f'{layer} {model_name}')
             pred_models.append(m)
 
-    results = rsatoolbox.inference.eval_bootstrap_pattern(pred_models, neuro_rdms, method='corr', N=100)
+    N = 100
+    if 'cov' in method:
+        N=5
+    results = rsatoolbox.inference.eval_bootstrap_pattern(pred_models, neuro_rdms, method=method, N=N)
     rsatoolbox.vis.plot_model_comparison(results)
     return results, pred_model_names
 
@@ -338,33 +352,32 @@ def plot_dim_reduction_one(features, labels=None, transformer='MDS', save=None, 
         norm = mpl.colors.BoundaryNorm(np.arange(-0.5,num_colors), cmap.N) 
         ax_ = ax.scatter(feats[:, 0], feats[:, 1], c=labels, cmap=cmap, norm=norm, s=3)
     
-    fig.subplots_adjust(right=0.9, top=0.9)
+    
     if add_bar:
+        fig.subplots_adjust(right=0.9, top=0.9)
         cbar_ax = fig.add_axes([0.95, 0.3, 0.01, 0.45])
-    fig.colorbar(ax_, cax=cbar_ax, ticks=np.linspace(0,9,10))
+        fig.colorbar(ax_, cax=cbar_ax, ticks=np.linspace(0,9,10))
 
-    if save:
-        fig.savefig(f'{save}.svg', format='svg', dpi=300, bbox_inches='tight')
+    # if save:
+    #     fig.savefig(f'{save}.svg', format='svg', dpi=300, bbox_inches='tight')
 
     return fig
 
 
 
-def plot_rdm_mds(model, imgs, labels, layers, num_steps=5, plot='rdm mds', cmap = 'magma', save= None):
+def plot_rdm_mds(model, imgs, labels, layers, rdm_method='euclidean', num_steps=5, plot='rdm mds', cmap = 'magma', add_text= True, add_bar=True, save= None, format='png'):
 
     if 'rdm' in plot:
         for layer in layers:
             # if save:
             #     save = f'results/figures/{layer}_{save}_rdms'
             features = extract_features(model, imgs.to(device), layer, num_steps=num_steps)
-            rdms, rdms_dict = calc_rdms(features)
-            add_text = True
+            _, rdms_dict = calc_rdms(features, method=rdm_method)
             #if layer is not 'IT':
-            add_text = False
-            fig = plot_maps(rdms_dict, save=save, add_text=add_text, cmap=cmap)
+            fig = plot_maps(rdms_dict, save=save, add_text=add_text, add_bar=add_bar, cmap=cmap)
             if save:
                 save_path = f'results/figures/{layer}_{save}_rdms'
-                fig.savefig(f'{save_path}.svg', format='svg', dpi=300, bbox_inches='tight')
+                fig.savefig(f'{save_path}.{format}', format=format, dpi=300, bbox_inches='tight')
 
     if 'mds' in plot:
         for layer in layers:
@@ -372,14 +385,11 @@ def plot_rdm_mds(model, imgs, labels, layers, num_steps=5, plot='rdm mds', cmap 
             #     save = f'results/figures/{layer}_{save}_mds'
             features = extract_features(model, imgs.to(device), layer, num_steps=num_steps)
             features_transformed = reduce_dim(features)
-            
-            add_text = True
-            #if layer is not 'IT':
-            add_text = False
-            fig = plot_dim_reduction_one(features_transformed, labels, transformer='MDS', save=save, add_text=add_text)
+
+            fig = plot_dim_reduction_one(features_transformed, labels, transformer='MDS', save=save, add_text=add_text, add_bar=add_bar)
             if save:
                 save_path = f'results/figures/{layer}_{save}_mds'
-                fig.savefig(f'{save_path}.svg', format='svg', dpi=300, bbox_inches='tight')
+                fig.savefig(f'{save_path}.{format}', format=format, dpi=300, bbox_inches='tight')
 
 from models.build_model import build_model
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -432,8 +442,19 @@ def extract_features(model, imgs, layer, num_steps=5):
     except:
         model = model
 
-    output = get_activations_batch(model, imgs, layer=layer, sublayer='output')
-    output = output.reshape(*output.shape[:3], -1).mean(-1)
+    num_chunks = len(imgs) // 64
+    chunks = torch.chunk(imgs, num_chunks, dim=0)
+
+    outputs = []
+    for chunk in chunks:
+        output = get_activations_batch(model, chunk, layer=layer, sublayer='output')
+        #print(output.reshape(*output.shape[:3], -1).shape) (5, 276, 512, 49)
+        #output = output.reshape(*output.shape[:3], -1).mean(-1)
+        output = output.reshape(*output.shape[:2], -1)
+        #print(output.shape)
+        outputs.append(output)
+
+    output = np.concatenate(outputs, axis=1)
 
     features = {}
     average_features = []
