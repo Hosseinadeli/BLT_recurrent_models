@@ -449,9 +449,13 @@ def extract_features(model, imgs, layer, num_steps=5):
     for chunk in chunks:
         output = get_activations_batch(model, chunk, layer=layer, sublayer='output')
         #print(output.reshape(*output.shape[:3], -1).shape) (5, 276, 512, 49)
-        #output = output.reshape(*output.shape[:3], -1).mean(-1)
-        output = output.reshape(*output.shape[:2], -1)
-        #print(output.shape)
+
+        # average pooling over spatial dimensions in higher layers
+        if layer == 'output_4' or layer == 'output_5':
+            output = output.reshape(*output.shape[:3], -1).mean(-1)
+        else:
+            output = output.reshape(*output.shape[:2], -1)
+
         outputs.append(output)
 
     output = np.concatenate(outputs, axis=1)
@@ -462,6 +466,6 @@ def extract_features(model, imgs, layer, num_steps=5):
         features[f'step {t}'] = output[t]
         average_features.append(output[t] / np.max(output[t]))
 
-    features['average'] = np.mean(average_features, axis=0)
+    #features['average'] = np.mean(average_features, axis=0)
     return features
 
