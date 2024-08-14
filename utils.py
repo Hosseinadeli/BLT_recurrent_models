@@ -5,17 +5,22 @@ Misc functions, including distributed helpers.
 Mostly copy-paste from torchvision references.
 """
 import os
+import sys
 import subprocess
 import time
 from collections import defaultdict, deque
 import datetime
+from datetime import timedelta
 import pickle
-from packaging import version
 from typing import Optional, List
+import random
+import logging
+from packaging import version
 
 import torch
 import torch.distributed as dist
 from torch import Tensor
+import numpy as np
 
 # needed due to empty tensor bug in pytorch and torchvision 0.5
 import torchvision
@@ -23,22 +28,32 @@ if version.parse(torchvision.__version__) < version.parse('0.7'):
     from torchvision.ops import _new_empty_tensor
     from torchvision.ops.misc import _output_size
 
+def get_open_port():
+    # python -c 'import socket; s = socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()'
+    # export MASTER_PORT=$(python -c 'import socket; s = socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        ip, port = s.getsockname()
+    return port
 
+def get_ddp_hostname():
+    return os.environ.get("MASTER_ADDR"), os.environ.get("MASTER_PORT")
 
-def init_distributed_mode(args):
+def init_distributed_mode(args, hide_prints=True):
     # args.distributed = True
-
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = args.port
     args.gpu = args.rank
     args.dist_url = 'env://'
     torch.cuda.set_device(args.gpu)
     args.dist_backend = 'nccl'
-    print('| distributed init (rank {}): {}'.format(args.rank, args.dist_url), flush=True)
+    # print('| distributed init (rank {}): {}'.format(args.rank, args.dist_url), flush=True)
     torch.distributed.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
-                                         world_size=args.world_size, rank=args.rank)
+                                         world_size=args.world_size, rank=args.rank, timeout=timedelta(minutes=10))
     torch.distributed.barrier()
-    setup_for_distributed(args.rank == 0)
+    if hide_prints:
+        setup_for_distributed(args.rank == 0)
 
     
 class SmoothedValue(object):
@@ -282,6 +297,15 @@ def get_sha():
     message = f"sha: {sha}, status: {diff}, branch: {branch}"
     return message
 
+def get_git_commit(short=True):
+    cmd = ["git", "rev-parse"]
+    if short:
+        cmd.append("--short")
+    cmd.append("HEAD")
+    try:
+        return subprocess.check_output(cmd).strip().decode("utf-8")
+    except subprocess.CalledProcessError:
+        return "unknown"
 
 def collate_fn(batch):
     batch = list(zip(*batch))
@@ -296,6 +320,80 @@ def _max_by_axis(the_list):
         for index, item in enumerate(sublist):
             maxes[index] = max(maxes[index], item)
     return maxes
+
+
+def seed_all(seed: int, deterministic_algorithms: bool = False):
+    random.seed(seed)  # Python seed
+    torch.manual_seed(seed)  # Torch seed (note this does all devices)
+    np.random.seed(seed)  # Numpy seed
+    torch.cuda.manual_seed_all(seed)  # for multi-GPU
+
+    if deterministic_algorithms:
+        torch.use_deterministic_algorithms(True)
+        # torch.backends.cudnn.benchmark = False  # cuDNN benchmarking finds fastest algorithm
+        # torch.backends.cudnn.deterministic = True
+
+def format_seconds(seconds: float, ms: bool = True) -> str:
+    """Formats a second count into (HH:)MM:SS.MS format
+
+    Args:
+        seconds (float): Total seconds
+        ms (bool, optional): Include milliseconds. Defaults to True.
+
+    Returns:
+        str: Formatted time string (HH:)MM:SS[.MS]
+    """
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    milliseconds = int((seconds % 1) * 1000)
+    format_str = ""
+    if hours > 0:
+        format_str += f"{int(hours):02d}:"
+    format_str += f"{int(minutes):02d}:{int(seconds):02d}"
+    if ms:
+        format_str += f".{milliseconds:03d}"
+    return format_str
+
+
+def get_logger(key: str = "root", silent: bool = False, level = logging.INFO):
+    logger = logging.getLogger(key)
+        
+    # Change handlers if necessary
+    if len(logger.handlers) > 0:
+        if (
+            (silent and isinstance(logger.handlers[0], logging.StreamHandler))
+            or (not silent and isinstance(logger.handlers[0], logging.NullHandler))
+        ):
+            logger.handlers.clear()
+    
+    if len(logger.handlers) == 0:
+        if silent:
+            logger.handlers.append(logging.NullHandler())
+        else:
+            handler = logging.StreamHandler(sys.stdout)
+            formatter = logging.Formatter(
+                fmt = (
+                    "[%(name)s] [%(asctime)s %(levelname)s]: %(message)s"
+                    if key != "root"
+                    else "[%(asctime)s %(levelname)s]: %(message)s"
+                ),
+                # fmt = "[%(threadName)s] [%(asctime)s %(levelname)s]: %(message)s",
+                # datefmt = "%Y-%m-%d %H:%M:%S.%" 
+            )
+            formatter.default_msec_format = "%s.%03d"
+            handler.setFormatter(formatter)
+            logger.handlers.append(handler)
+    
+    # Don't propagate to root logger
+    logger.propagate = False
+
+    # Print all messages (note can't use NOTSET bc it will delegate to default logger)
+    logger.setLevel(level)
+
+    return logger
+
+# Load the root logger
+get_logger()
 
 
 class NestedTensor(object):
@@ -393,23 +491,15 @@ def setup_for_distributed(is_master):
 
 
 def is_dist_avail_and_initialized():
-    if not dist.is_available():
-        return False
-    if not dist.is_initialized():
-        return False
-    return True
+    return dist.is_available() and dist.is_initialized()
 
 
 def get_world_size():
-    if not is_dist_avail_and_initialized():
-        return 1
-    return dist.get_world_size()
+    return dist.get_world_size() if is_dist_avail_and_initialized() else 1
 
 
 def get_rank():
-    if not is_dist_avail_and_initialized():
-        return 0
-    return dist.get_rank()
+    return dist.get_rank() if is_dist_avail_and_initialized() else 0
 
 
 def is_main_process():

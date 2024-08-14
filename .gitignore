@@ -4,3 +4,4 @@ blt copy.py
 resources/
 __pycache__
 datasets/saved_data/
+.DS_Store

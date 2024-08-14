@@ -436,7 +436,6 @@ def load_pretrained_models(model_name):
 
 
 def extract_features(model, imgs, layer, num_steps=5):
-
     try:
         model = model.module
     except:

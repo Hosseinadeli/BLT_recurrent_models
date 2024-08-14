@@ -1,22 +1,13 @@
 #!/usr/bin/env python
 
-import collections
 import os
 
 import numpy as np
-#import PIL.Image
-from PIL import Image, ImageOps 
-import scipy.io
 import torch
-from torch.utils import data
 import torchvision
-from tqdm import tqdm
-import pandas as pd
-import csv
 from torch.utils.data import Subset
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.distributed import init_process_group, destroy_process_group
 
 from .vggface2 import VGGFaces2
 
@@ -24,29 +15,27 @@ normalize = torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                              std=[0.229, 0.224, 0.225])
 
 
-def fetch_ImageNet(args, split='full', transform=None,
-                 horizontal_flip=False, upper=None, return_datasets=False, num_cats=1000):
-    
-    data_path = args.data_path #'/share/data/imagenet-pytorch'
-
-    if args.horizontal_flip:
-        dataset_train = torchvision.datasets.ImageFolder(
-            os.path.join(data_path, 'train'),
-            torchvision.transforms.Compose([
-                torchvision.transforms.RandomResizedCrop(224),
-                torchvision.transforms.RandomHorizontalFlip(),
-                torchvision.transforms.ToTensor(),
-                normalize,
-            ]))
-    else:
-        dataset_train = torchvision.datasets.ImageFolder(
-            os.path.join(data_path, 'train'),
-            torchvision.transforms.Compose([
-                torchvision.transforms.RandomResizedCrop(224),
-                torchvision.transforms.ToTensor(),
-                normalize,
-            ]))
-    
+def fetch_ImageNet(data_path: str = "/share/data/imagenet-pytorch", transform=None,
+                 horizontal_flip=False, upper=None, num_cats=1000, only_valid: bool = False):
+    if not only_valid:
+        if horizontal_flip:
+            dataset_train = torchvision.datasets.ImageFolder(
+                os.path.join(data_path, 'train'),
+                torchvision.transforms.Compose([
+                    torchvision.transforms.RandomResizedCrop(224),
+                    torchvision.transforms.RandomHorizontalFlip(),
+                    torchvision.transforms.ToTensor(),
+                    normalize,
+                ]))
+        else:
+            dataset_train = torchvision.datasets.ImageFolder(
+                os.path.join(data_path, 'train'),
+                torchvision.transforms.Compose([
+                    torchvision.transforms.RandomResizedCrop(224),
+                    torchvision.transforms.ToTensor(),
+                    normalize,
+                ]))
+        
     dataset_val = torchvision.datasets.ImageFolder(
         os.path.join(data_path, 'val'),
         torchvision.transforms.Compose([
@@ -56,35 +45,20 @@ def fetch_ImageNet(args, split='full', transform=None,
             normalize,
         ]))
     
-
     if num_cats < 1000:
-        idxs = [i for i in range(len(dataset_train)) if dataset_train.imgs[i][1] < num_cats]
-        dataset_train = Subset(dataset_train, idxs)
+        if not only_valid:
+            idxs = [i for i in range(len(dataset_train)) if dataset_train.imgs[i][1] < num_cats]
+            dataset_train = Subset(dataset_train, idxs)
 
         idxs = [i for i in range(len(dataset_val)) if dataset_val.imgs[i][1] < num_cats]
         dataset_val = Subset(dataset_val, idxs)
 
-    data_loader_train = torch.utils.data.DataLoader(dataset_train,
-                                                batch_size=args.batch_size,
-                                                shuffle=True,
-                                                num_workers=args.num_workers,
-                                                pin_memory=True)
-    
-
-    data_loader_val = torch.utils.data.DataLoader(dataset_val,
-                                                batch_size=args.batch_size,
-                                                shuffle=False,
-                                                num_workers=args.num_workers,
-                                                pin_memory=True)
-    
-
-    if return_datasets:
-        return dataset_train, data_loader_train, dataset_val, data_loader_val
-    
-    return data_loader_train, data_loader_val
+    if only_valid:
+        return dataset_val
+    return dataset_train, dataset_val
         
 
-def fetch_data_loaders(args):
+def fetch_data_loaders(args, return_loaders: bool = True, only_valid: bool = False):
     
     if args.dataset == 'vggface2':
             # VGGface 2
@@ -92,17 +66,24 @@ def fetch_data_loaders(args):
 
             kwargs = {} # {'num_workers': args.workers, 'pin_memory': True} if cuda else {}
             args.num_classes = 3890
-            dataset_train = VGGFaces2(args, split='train', num_cats=args.num_classes)            
+            if not only_valid:
+                dataset_train = VGGFaces2(args, split='train', num_cats=args.num_classes)            
             dataset_val = VGGFaces2(args, split='val', num_cats=args.num_classes)
         
     elif args.dataset == 'imagenet':
 
         #save_dir = args.output_dir + 'imagenet_class_8steps_' + str(args.task_arch) 
         args.num_classes = 1000
-        dataset_train, _, dataset_val, _  = fetch_ImageNet(args, split='train', return_datasets=True)
+        ds = fetch_ImageNet(data_path=args.data_path, horizontal_flip=args.horizontal_flip, only_valid=only_valid)
+        if only_valid:
+            dataset_val = ds
+        else:
+            dataset_train, dataset_val = ds
+            
 
     elif args.dataset == 'imagenet_vggface2':
-    # half imagenet, half vggface2
+        # half imagenet, half vggface2
+        # TODO: Handle only_valid
 
         #save_dir = args.output_dir + f'{args.objective}_{args.task_arch}_{args.dataset}/run_{args.run}'
         args.num_classes = 500 + 1920  # 3890 -> 1282172   # 1920 -> 640102  # 4->1134
@@ -112,13 +93,13 @@ def fetch_data_loaders(args):
         vggface2_train_dataset = VGGFaces2(args, split='train', num_cats=1920, starting_cat_label=500)
         vggface2_val_dataset = VGGFaces2(args, split='val', num_cats=1920, starting_cat_label=500)
         
-        imagenet_train_dataset, _, imagenet_val_dataset, _ = fetch_ImageNet(args, return_datasets=True, num_cats=500)
+        imagenet_train_dataset, _, imagenet_val_dataset, _ = fetch_ImageNet(data_path=args.data_path, horizontal_flip=args.horizontal_flip, return_datasets=True, num_cats=500)
         
         dataset_train  = torch.utils.data.ConcatDataset([imagenet_train_dataset, vggface2_train_dataset])
         dataset_val  = torch.utils.data.ConcatDataset([imagenet_val_dataset, vggface2_val_dataset])
 
     elif args.dataset == 'imagenet_face':
-
+        # TODO: Handle only_valid
         args.num_classes = 999 + 1
 
         kwargs = {} # {'num_workers': args.workers, 'pin_memory': True} if cuda else {}
@@ -126,11 +107,15 @@ def fetch_data_loaders(args):
         vggface2_train_dataset = VGGFaces2(args, split='train', num_cats=4, starting_cat_label=999, just_one_cat=True)
         vggface2_val_dataset = VGGFaces2(args, split='val', num_cats=4, starting_cat_label=999, just_one_cat=True)
         
-        imagenet_train_dataset, _, imagenet_val_dataset, _ = fetch_ImageNet(args, return_datasets=True, num_cats=999)
+        imagenet_train_dataset, imagenet_val_dataset = fetch_ImageNet(data_path=args.data_path, horizontal_flip=args.horizontal_flip, return_datasets=True, num_cats=999, only_valid=only_valid)
         
         dataset_train = torch.utils.data.ConcatDataset([imagenet_train_dataset, vggface2_train_dataset])
         dataset_val = torch.utils.data.ConcatDataset([imagenet_val_dataset, vggface2_val_dataset])
 
+    if not return_loaders:
+        if only_valid:
+            return dataset_val
+        return dataset_train, dataset_val
 
     if args.distributed:
         sampler_train = DistributedSampler(dataset_train)
