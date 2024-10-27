@@ -3,6 +3,7 @@ import torch
 from torch import nn
 from collections import OrderedDict
 import torch.utils.model_zoo
+import antialiased_cnns
 
 class Identity(nn.Module):
     """
@@ -40,7 +41,7 @@ class Unsqueeze(nn.Module):
 
 class blt(nn.Module):
 
-    def __init__(self, model_name, conn_matrix, num_classes, layer_channels, out_shape, times=5):
+    def __init__(self, model_name, conn_matrix, num_classes, layer_channels, out_shape, times=5, pooling_function='max'):
         super().__init__()
         self.model_name = model_name
         self.times = times
@@ -66,6 +67,7 @@ class blt(nn.Module):
 
         # define all the connections between the layers
         for i in range(num_layers):
+            setattr(self, f'output_prenorm_{i}', Identity())
             setattr(self, f'non_lin_{i}', nn.ReLU(inplace=True))
             setattr(self, f'norm_{i}', nn.GroupNorm(32, self.layer_channels[f'{i}']))
             setattr(self, f'output_{i}', Identity())
@@ -113,8 +115,9 @@ class blt(nn.Module):
 
                     #print(out_shape[f'{i}'], out_shape[f'{j}'], shape_factor)
                                         
-                    # apply avgpooling if the output shape is 1 and the input shape is not 1
+                    
                     if shape_factor > 1:
+                        # apply avgpooling if the output shape is 1 and the input shape is not 1
                         if out_shape[f'{i}'] != 1 and out_shape[f'{j}'] == 1:
                             conn = nn.Sequential(OrderedDict([
                                 # ('maxpool', nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
@@ -126,10 +129,21 @@ class blt(nn.Module):
                             ]))
 
                         else:
-                            conn = nn.Sequential(OrderedDict([
-                            ('maxpool', nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
-                            ('conv', conv),
-                        ]))
+                            if pooling_function == 'max':
+                                conn = nn.Sequential(OrderedDict([
+                                    ('maxpool', nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
+                                    ('conv', conv),
+                                ]))
+                            elif pooling_function == 'avg':
+                                conn = nn.Sequential(OrderedDict([
+                                    ('avgpool', nn.AvgPool2d(kernel_size=3, stride=2, padding=1)),
+                                    ('conv', conv),
+                                ]))
+                            elif pooling_function == 'blur':
+                                conn = nn.Sequential(OrderedDict([ 
+                                    ('blurpool', antialiased_cnns.BlurPool(self.layer_channels[f'{i}'], stride=2)),
+                                    ('conv', conv),
+                                ]))
                     else:
                         # if out_shape[f'{i}'] == 1 and out_shape[f'{j}'] == 1:
                         #     conn = nn.Sequential(OrderedDict([
@@ -154,15 +168,16 @@ class blt(nn.Module):
                         conn =  nn.Conv2d(self.layer_channels[f'{i}'], 
                                       self.layer_channels[f'{j}'], 
                                       **cnn_kwargs)
-                    else:
+                    else: 
+                    # output_shape = (input_shape - 1) * stride - 2*padding + kernel_size + output_padding
                         if shape_factor == 2:
                             cnn_kwargs = dict(kernel_size=3, stride=2, padding=1, output_padding=1)
                         elif shape_factor == 4:
-                            cnn_kwargs = dict(kernel_size=5, stride=4, padding=2, output_padding=3)
+                            cnn_kwargs = dict(kernel_size=5, stride=4, padding=1, output_padding=1)
                         elif shape_factor == 8:
-                            cnn_kwargs = dict(kernel_size=9, stride=8, padding=4, output_padding=7)
+                            cnn_kwargs = dict(kernel_size=9, stride=8, padding=1, output_padding=1)
                         elif shape_factor == 16:
-                            cnn_kwargs = dict(kernel_size=17, stride=16, padding=8, output_padding=15)
+                            cnn_kwargs = dict(kernel_size=17, stride=16, padding=1, output_padding=1)
 
                         conn = nn.ConvTranspose2d(self.layer_channels[f'{i}'],
                                                 self.layer_channels[f'{j}'],
@@ -173,7 +188,7 @@ class blt(nn.Module):
         # self.gap = nn.AdaptiveAvgPool2d(1)
 
         self.read_out = nn.Sequential(OrderedDict([
-            ('avgpool', nn.AdaptiveAvgPool2d(1)),
+            ('maxpool', nn.AdaptiveMaxPool2d(1)),
             ('flatten', Flatten()),
             ('linear', nn.Linear(512, self.num_classes))
         ]))
@@ -235,6 +250,7 @@ class blt(nn.Module):
 
                 # apply relu here   
                 if new_output is not None:
+                    new_output = getattr(self, f'output_prenorm_{block}')(new_output)
                     new_output = getattr(self, f'norm_{block}')(new_output)
                     new_output = getattr(self, f'non_lin_{block}')(new_output)
                     new_output = getattr(self, f'output_{block}')(new_output)
@@ -254,6 +270,7 @@ def get_blt_model(model_name, pretrained=False, map_location=None, **kwargs):
     img_channels = kwargs['in_channels']
     times = kwargs['times']
     num_classes = kwargs['num_classes']
+    pooling_function = kwargs['pooling_function']
     
     if num_layers == 4:
         layer_channels  = {'inp':img_channels, '0':64, '1':128, '2':256, '3':512}
@@ -307,5 +324,5 @@ def get_blt_model(model_name, pretrained=False, map_location=None, **kwargs):
                 if i == (j+s):
                     conn_matrix[i, j] = 1
 
-    model = blt(model_name, conn_matrix, num_classes, layer_channels, out_shape, times)
+    model = blt(model_name, conn_matrix, num_classes, layer_channels, out_shape, times, pooling_function)
     return model

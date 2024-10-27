@@ -8,8 +8,12 @@ def build_model(args, pretrained=False, verbose=True):
         # if args.model[4:] == 'b':
         #     kwargs = {'in_channels': args.img_channels, 'times': args.recurrent_steps} #
         # else:
+        if not hasattr(args, 'pool'):
+            args.pool = 'max'
+
         kwargs = {'in_channels': args.img_channels, 'times': args.recurrent_steps, \
-                  'num_layers': args.num_layers, 'num_classes': args.num_classes} #
+                  'num_layers': args.num_layers, 'num_classes': args.num_classes, \
+                  'pooling_function': args.pool} #
         model = get_blt_model(args.model[4:], pretrained=pretrained, map_location=None, **kwargs) #
         
     elif 'cornet' in args.model:

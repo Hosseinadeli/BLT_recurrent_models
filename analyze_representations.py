@@ -44,10 +44,11 @@ def load_vggface2():
 
     return train_loader, val_loader
 
-def sample_vggface2(num_cats=5, per_cat=10):
+
+def sample_vggface2(num_cats=5, per_cat=10, split_folder='test'):
 
     root = '/scratch/nklab/projects/face_proj/datasets/VGGFace2/'
-    split_folder = 'test'
+    #split_folder = 'test'
     split_dir = root + split_folder + '/'
         
     dir_list = os.listdir(split_dir)
@@ -136,6 +137,60 @@ def sample_FEI_dataset(num_ids=25):
     imgs = torch.stack(imgs_o).to(device)
 
     return imgs, torch.tensor(labels_o), torch.tensor(labels_m), torch.tensor(labels_i)
+
+
+def FBO_dataset():
+    root = '/engram/nklab/hossein/recurrent_models/face_datasets/'
+    split_folder = 'FBO'
+    split_dir = root + split_folder + '/'
+    dir_list = os.listdir(split_dir)
+
+    FBO_info = pd.read_excel(split_dir + 'info.xlsx')  
+    FBO_info.head()
+
+    transform_rgb =  torchvision.transforms.Compose([
+            torchvision.transforms.Resize(224),  #256
+            torchvision.transforms.CenterCrop(224),
+            torchvision.transforms.ToTensor(), # convert the images to a PyTorch tensor
+            torchvision.transforms.Normalize([0.6068, 0.4517, 0.3800], [0.2492, 0.2173, 0.2082]) # normalize the images color channels
+        ])
+
+    imgs = []
+    labels = []
+
+    for i in range(len(FBO_info)):
+        imange_name = FBO_info['image'].iloc[i]
+        label = FBO_info['category'].iloc[i]
+
+        if label == 'face':
+            label = 1
+        elif label == 'body':
+            label = 2
+        elif label == 'vegifruit':
+            label = 3
+        elif label == 'artefact':
+            label = 4
+        elif label == 'scrambled':
+            label = 5
+        else:
+            continue
+            
+        labels.append(label)
+
+        img = Image.open(split_dir + imange_name)
+
+        img = img.convert('RGB')
+
+        img = transform_rgb(img)
+                
+        img = torchvision.transforms.functional.rgb_to_grayscale(img, num_output_channels=3) 
+        imgs.append(img)
+                
+    imgs = torch.stack(imgs).to(device)
+    #labels = torch.tensor(labels).to(device)
+
+    return imgs, labels
+
 
 
 import scipy.io
@@ -350,7 +405,7 @@ def plot_dim_reduction_one(features, labels=None, transformer='MDS', save=None, 
         num_colors = len(np.unique(labels))
         cmap = plt.get_cmap('viridis_r', num_colors) # 10 discrete colors
         norm = mpl.colors.BoundaryNorm(np.arange(-0.5,num_colors), cmap.N) 
-        ax_ = ax.scatter(feats[:, 0], feats[:, 1], c=labels, cmap=cmap, norm=norm, s=3)
+        ax_ = ax.scatter(feats[:, 1], feats[:, 0], c=labels, cmap=cmap, norm=norm, s=3)
     
     
     if add_bar:
@@ -365,13 +420,13 @@ def plot_dim_reduction_one(features, labels=None, transformer='MDS', save=None, 
 
 
 
-def plot_rdm_mds(model, imgs, labels, layers, rdm_method='euclidean', num_steps=5, plot='rdm mds', cmap = 'magma', add_text= True, add_bar=True, save= None, format='png'):
+def plot_rdm_mds(model, imgs, labels, layers, rdm_method='euclidean', num_steps=5, plot='rdm mds', cmap = 'magma', add_text= True, add_bar=True, save= None, format='png', filter_units=None, clip_acts=None):
 
     if 'rdm' in plot:
         for layer in layers:
             # if save:
             #     save = f'results/figures/{layer}_{save}_rdms'
-            features = extract_features(model, imgs.to(device), layer, num_steps=num_steps)
+            features = extract_features(model, imgs.to(device), layer, num_steps=num_steps, filter_units=filter_units, clip_acts=clip_acts)
             _, rdms_dict = calc_rdms(features, method=rdm_method)
             #if layer is not 'IT':
             fig = plot_maps(rdms_dict, save=save, add_text=add_text, add_bar=add_bar, cmap=cmap)
@@ -383,7 +438,7 @@ def plot_rdm_mds(model, imgs, labels, layers, rdm_method='euclidean', num_steps=
         for layer in layers:
             # if save:
             #     save = f'results/figures/{layer}_{save}_mds'
-            features = extract_features(model, imgs.to(device), layer, num_steps=num_steps)
+            features = extract_features(model, imgs.to(device), layer, num_steps=num_steps, filter_units=filter_units, clip_acts=clip_acts)
             features_transformed = reduce_dim(features)
 
             fig = plot_dim_reduction_one(features_transformed, labels, transformer='MDS', save=save, add_text=add_text, add_bar=add_bar)
@@ -392,7 +447,43 @@ def plot_rdm_mds(model, imgs, labels, layers, rdm_method='euclidean', num_steps=
                 fig.savefig(f'{save_path}.{format}', format=format, dpi=300, bbox_inches='tight')
 
 from models.build_model import build_model
+from scipy import stats
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+def calc_dprime_from_dataset(model, output_layer='output_5', threshold = 0.2, dataset_name='FBO', num_model_steps=5):
+
+    if dataset_name == 'FBO':
+        # extract features for FBO dataset
+        imgs, labels = FBO_dataset()
+
+    outputs = extract_features(model, imgs.to(device), output_layer, num_steps=num_model_steps)
+
+    model_resp_steps = []
+    for key, value in outputs.items():
+        model_resp_steps.append(outputs[key].transpose())
+
+    model_resp_steps = np.array(model_resp_steps)
+    model_resp_steps.shape
+    #model_resp = model_resp[np.where(np.mean(model_resp, axis=1))[0],:]
+
+    #model_resp = z_score_feats(model_resp_steps)
+    model_resp = stats.zscore(model_resp_steps, axis=2)
+
+    # averatge over time-steps for calculating selectivity
+    model_resp = np.mean(model_resp_steps, axis=0)
+
+    face_resp = model_resp[:,np.where(np.array(labels)==1)[0]]
+    non_face_resp = model_resp[:,np.where(np.array(labels)!=1)[0]]
+
+    d_prime = np.mean(face_resp, axis=1) - np.mean(non_face_resp, axis=1)
+
+    d_prime = d_prime / np.sqrt(np.var(face_resp, axis=1)/2 + np.var(non_face_resp, axis=1)/2)
+    face_cell_resp_steps = model_resp_steps[:,np.where(d_prime > threshold)[0], :] 
+
+    return d_prime, face_cell_resp_steps
+
+
+
 
 def load_model_path(model_path, print_model=False):
 
@@ -416,7 +507,7 @@ def load_model_path(model_path, print_model=False):
                     # ('linear', nn.Linear(512, 1000))
                 ]))
         
-    return model, gap 
+    return model, gap, args
 
 
 def load_pretrained_models(model_name):
@@ -435,7 +526,7 @@ def load_pretrained_models(model_name):
     return model
 
 
-def extract_features(model, imgs, layer, num_steps=5):
+def extract_features(model, imgs, layer, num_steps=5, normalize=False, filter_units=None, clip_acts = None):
 
     try:
         model = model.module
@@ -449,6 +540,14 @@ def extract_features(model, imgs, layer, num_steps=5):
     for chunk in chunks:
         output = get_activations_batch(model, chunk, layer=layer, sublayer='output')
         #print(output.reshape(*output.shape[:3], -1).shape) (5, 276, 512, 49)
+
+        if clip_acts is not None:
+            output = np.clip(output, a_min=0, a_max=clip_acts)
+
+        print(output.shape)
+        if filter_units is not None:
+            output = output[:, :, filter_units, :] # only take the last time-step
+            print(output.shape)
 
         # average pooling over spatial dimensions in higher layers
         if layer == 'output_4' or layer == 'output_5':
@@ -464,8 +563,43 @@ def extract_features(model, imgs, layer, num_steps=5):
     average_features = []
     for t in range(len(output)-num_steps,len(output)):
         features[f'step {t}'] = output[t]
-        average_features.append(output[t] / np.max(output[t]))
+        if normalize:
+            average_features.append(output[t] / np.max(output[t]))
+        else:
+            average_features.append(output[t])
 
     #features['average'] = np.mean(average_features, axis=0)
     return features
 
+# def extract_features_model(model, imgs, layer, num_steps=5):
+
+#     try:
+#         model = model.module
+#     except:
+#         model = model
+
+#     num_chunks = len(imgs) // 64
+#     chunks = torch.chunk(imgs, num_chunks, dim=0)
+
+#     outputs = []
+#     for chunk in chunks:
+#         output = get_activations_batch(model, chunk, layer=layer, sublayer='output')
+
+#         # average pooling over spatial dimensions in higher layers
+#         if layer == 'output_4' or layer == 'output_5':
+#             output = output.reshape(*output.shape[:3], -1).mean(-1)
+#         else:
+#             output = output.reshape(*output.shape[:2], -1)
+
+#         outputs.append(output)
+
+#     output = np.concatenate(outputs, axis=1)
+
+#     features = {}
+#     average_features = []
+#     for t in range(len(output)-num_steps,len(output)):
+#         features[f'step {t}'] = output[t]
+#         average_features.append(output[t]) # / np.max(output[t]))
+
+#     #features['average'] = np.mean(average_features, axis=0)
+#     return features

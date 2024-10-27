@@ -60,6 +60,10 @@ def get_args_parser():
                                             'blt_b2lt3', 'blt_b3lt3', 
                                             'cornet_z', 'cornet_s', 'cornet_r', 'cornet_rt'], 
                         default='blt_bl', type=str)
+
+
+    parser.add_argument('--pool', choices=['max', 'average', 'blur'],
+                        default='max', help='which pooling operation to use')
     
     parser.add_argument('--objective', choices=['classification', 'contrastive'],
                         default='classification', help='which model to train')
@@ -104,7 +108,8 @@ def get_args_parser():
                         help='what size should the image be resized to?')
     parser.add_argument('--horizontal_flip', default=False, type=bool,
                     help='wether to use horizontal flip augmentation')
-    parser.add_argument('--run', default=1, type=int) 
+    parser.add_argument('--run', default='1', type=str) 
+    #parser.add_argument('--run_name', default=1, type=int) 
     
     parser.add_argument('--img_channels', default=3, type=int,
                     help="what should the image channels be (not what it is)?") #gray scale 1 / color 3

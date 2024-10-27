@@ -34,6 +34,8 @@ def fetch_ImageNet(args, split='full', transform=None,
             os.path.join(data_path, 'train'),
             torchvision.transforms.Compose([
                 torchvision.transforms.RandomResizedCrop(224),
+                torchvision.transforms.GaussianBlur(kernel_size = 7, sigma=(0.01, 7.0)),
+                # torchvision.transforms.v2.GaussianNoise(),
                 torchvision.transforms.RandomHorizontalFlip(),
                 torchvision.transforms.ToTensor(),
                 normalize,
@@ -43,6 +45,8 @@ def fetch_ImageNet(args, split='full', transform=None,
             os.path.join(data_path, 'train'),
             torchvision.transforms.Compose([
                 torchvision.transforms.RandomResizedCrop(224),
+                torchvision.transforms.GaussianBlur(kernel_size = 7, sigma=(0.01, 7.0)),
+                # torchvision.transforms.v2.GaussianNoise(),
                 torchvision.transforms.ToTensor(),
                 normalize,
             ]))

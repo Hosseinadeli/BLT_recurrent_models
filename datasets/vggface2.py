@@ -76,6 +76,7 @@ class VGGFaces2(data.Dataset):
     #         transforms.RandomRotation(degrees=(0, 15)),
     #         transforms.RandomCrop(375),
     #         transforms.Resize((225,225)), # resize the images to 224x24 pixels
+            
             torchvision.transforms.ToTensor(), # convert the images to a PyTorch tensor
             torchvision.transforms.Normalize([0.6068, 0.4517, 0.3800], [0.2492, 0.2173, 0.2082]) # normalize the images color channels
         ])
@@ -274,8 +275,9 @@ class VGGFaces2(data.Dataset):
         #print(f'img before w, h : {img_w}, {img_h}   img after w, h : {img.size}')
         
         if self.split == 'train':
-            img = torchvision.transforms.CenterCrop(self.image_size)(img)  #RandomCrop  #CenterCrop
+            img = torchvision.transforms.RandomCrop(self.image_size)(img)  #RandomCrop  #CenterCrop
             img = torchvision.transforms.RandomGrayscale(p=0.2)(img)
+            img = torchvision.transforms.GaussianBlur(kernel_size = 7, sigma=(0.01,7.0))(img)
             if self.horizontal_flip:
                 img = torchvision.transforms.RandomHorizontalFlip()(img)
                 #img = torchvision.transforms.functional.hflip(img)
