@@ -90,16 +90,21 @@ def sample_vggface2(num_cats=5, per_cat=10, split_folder='test'):
     return imgs, labels
 
 
-def sample_FEI_dataset(num_ids=25):
+def sample_FEI_dataset(num_ids=25, orientation_inds = None, mirror_symmetry = None):
     root = '/engram/nklab/hossein/recurrent_models/face_datasets/'
     split_folder = 'FEI'
     split_dir = root + split_folder + '/'
     dir_list = os.listdir(split_dir)
 
+    
+
+    if orientation_inds is None:
+        orientation_inds = [1, 3, 11, 7, 10]
+        mirror_symmetry = [0, 1, 2, 1, 0]
+
     src_im = dir_list[0] 
     img_file = os.path.join(split_dir, src_im)
 
-    orientation_inds = [1, 3, 11, 7, 10]
     id_inds = np.arange(1,num_ids+1)
 
     transform_rgb =  torchvision.transforms.Compose([
@@ -109,7 +114,8 @@ def sample_FEI_dataset(num_ids=25):
         torchvision.transforms.Resize(224),  #256
         torchvision.transforms.CenterCrop(224),
         torchvision.transforms.ToTensor(), # convert the images to a PyTorch tensor
-        torchvision.transforms.Normalize([0.6068, 0.4517, 0.3800], [0.2492, 0.2173, 0.2082]) # normalize the images color channels
+        torchvision.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]) # normalize the images color channels
+        #torchvision.transforms.Normalize([0.6068, 0.4517, 0.3800], [0.2492, 0.2173, 0.2082]) # normalize the images color channels
     ])
 
     imgs_o = []
@@ -118,11 +124,13 @@ def sample_FEI_dataset(num_ids=25):
     labels_m = []
     labels_i = []
 
-    mirror_symmetry = [0, 1, 2, 1, 0]
+    
     for o in range(len(orientation_inds)):
         for i in id_inds:
-            labels_o.append(o)
-            labels_m.append(mirror_symmetry[o])
+            if mirror_symmetry is not None:
+                labels_o.append(o)
+                labels_m.append(mirror_symmetry[o])
+
             labels_i.append(i)
             src_im = f'{i}-{str(orientation_inds[o]).zfill(2)}.jpg'
             img_file = os.path.join(split_dir, src_im)
@@ -130,11 +138,11 @@ def sample_FEI_dataset(num_ids=25):
 
             img = transform_rgb(img)
             
-            img = torchvision.transforms.functional.rgb_to_grayscale(img, num_output_channels=3) 
+            #img = torchvision.transforms.functional.rgb_to_grayscale(img, num_output_channels=3) 
             imgs_o.append(img)
             
 
-    imgs = torch.stack(imgs_o).to(device)
+    imgs = torch.stack(imgs_o)
 
     return imgs, torch.tensor(labels_o), torch.tensor(labels_m), torch.tensor(labels_i)
 
