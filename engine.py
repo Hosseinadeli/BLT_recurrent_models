@@ -14,7 +14,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     print_freq = 100
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=print_freq, fmt='{value:.6f}'))
-    metric_logger.add_meter('loss_labels', utils.SmoothedValue(window_size=print_freq))  #, fmt='{value:.2f}'
+    metric_logger.add_meter('loss', utils.SmoothedValue(window_size=print_freq))  #, fmt='{value:.2f}'
     header = 'Epoch: [{}]'.format(epoch)
     
 
@@ -48,7 +48,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         optimizer.step()
 
         metric_logger.update(loss=loss_value)  #, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled
-        metric_logger.update(loss_labels=loss_value) #loss_dict_reduced['loss_recon']
+        #metric_logger.update(loss_labels=loss_value) #loss_dict_reduced['loss_recon']
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
 
     # gather the stats from all processes
@@ -57,12 +57,13 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
+@torch.no_grad()
 def evaluate(model, criterion, data_loader, args=None, lh_challenge_rois=None, rh_challenge_rois=None, return_all=False):
     model.eval()
     criterion.eval()
 
     metric_logger = utils.MetricLogger(delimiter="  ")
-    metric_logger.add_meter('loss_labels', utils.SmoothedValue(window_size=100)) #, fmt='{value:.2f}'
+    metric_logger.add_meter('loss', utils.SmoothedValue(window_size=100)) #, fmt='{value:.2f}'
     header = 'Test:'
 
     corr_all = 0
@@ -87,13 +88,13 @@ def evaluate(model, criterion, data_loader, args=None, lh_challenge_rois=None, r
                                     for k, v in loss_dict_reduced.items() if k in weight_dict}
         metric_logger.update(loss=sum(loss_dict_reduced_scaled.values()))
                 
-        metric_logger.update(loss_labels=loss_dict_reduced['loss_labels'])
+        #metric_logger.update(loss_labels=loss_dict_reduced['loss_labels'])
 
         record['loss'] += loss_dict_reduced['loss_labels']
 
         # pred_logits = outputs['pred_logits']
 
-        outputs = outputs[-1]
+        #outputs = outputs[-1]
         p1, p5 = accuracy(outputs, labels, topk=(1, 5))
         record['top1'] += p1
         record['top5'] += p5

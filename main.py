@@ -28,7 +28,7 @@ Image.warnings.simplefilter('ignore')
 
 # TODO 
 # np.random.seed(0)
-# torch.manual_seed(0)
+# torch.manual_seed(62)
 
 try:
     import wandb
@@ -58,20 +58,24 @@ def get_args_parser():
                                             'blt_b3t2', 'blt_blt2', 'blt_b2lt2', 'blt_b3lt2',
                                             'blt_bt3', 'blt_b2t3', 'blt_b3t3', 'blt_blt3', 
                                             'blt_b2lt3', 'blt_b3lt3', 
-                                            'cornet_z', 'cornet_s', 'cornet_r', 'cornet_rt'], 
+                                            'cornet_z', 'cornet_s', 'cornet_r', 'cornet_rt',
+                                            'resnet50'], 
                         default='blt_bl', type=str)
 
 
     parser.add_argument('--pool', choices=['max', 'average', 'blur'],
-                        default='max', help='which pooling operation to use')
+                        default='blur', help='which pooling operation to use')
     
     parser.add_argument('--objective', choices=['classification', 'contrastive'],
                         default='classification', help='which model to train')
+
+    parser.add_argument('--smooth_labels', default=1, type=int,
+                        help='whether to smooth the lables for training')
     
     parser.add_argument('--loss_choice', choices=['weighted', 'decay'] 
                         , default='decay', type=str, 
                         help='how to apply loss to earlier readout layers')  
-    parser.add_argument('--loss_gamma', default=.5, type=float, 
+    parser.add_argument('--loss_gamma', default=0, type=float, 
                         help='whether to have loss in earlier steps of the readout')
 
     parser.add_argument('--recurrent_steps', default=10, type=int,
@@ -85,13 +89,13 @@ def get_args_parser():
                         help='number of total epochs to run')
     parser.add_argument('--batch_size', default=128, type=int,
                         help='mini-batch size')
-    parser.add_argument('--lr', default=.0005, type=float,
+    parser.add_argument('--lr', default=.1, type=float,
                         help='initial learning rate')
     parser.add_argument('--weight_decay', default=1e-4, type=float,
                         help='weight decay ')
-    parser.add_argument('--lr_drop', default=100, type=int)
-    parser.add_argument('--clip_max_norm', default=0.1, type=float,
-                        help='gradient clipping max norm')
+    parser.add_argument('--lr_drop', default=30, type=int)
+    parser.add_argument('--clip_max_norm', default=0, type=float,
+                        help='gradient clipping max norm') #0.1
     
     parser.add_argument('--evaluate', action='store_true', help='just evaluate')
     
@@ -124,28 +128,47 @@ def get_args_parser():
     return parser
 
 
+class LabelSmoothLoss(nn.Module):
+    def __init__(self, smoothing=0.0):
+        super(LabelSmoothLoss, self).__init__()
+        self.smoothing = smoothing
+
+    def forward(self, input, target):
+        log_prob = F.log_softmax(input, dim=-1)
+        weight = input.new_ones(input.size()) * self.smoothing / (input.size(-1) - 1.)
+        weight.scatter_(-1, target.unsqueeze(-1), (1. - self.smoothing))
+        loss = (-weight * log_prob).sum(dim=-1).mean()
+        return loss
+    
 class SetCriterion(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.weight_dict = {'loss_labels': 1}
         self.loss_gamma = args.loss_gamma
-        self.loss_func = nn.CrossEntropyLoss()
+        if args.smooth_labels:
+            self.loss_func = LabelSmoothLoss() 
+        else:
+            self.loss_func = nn.CrossEntropyLoss()
         self.loss_choice = args.loss_choice
 
     def forward(self, outputs, targets):
 
         loss = 0
         weight_sum = 1
-        loss = self.loss_func(outputs[-1], targets)
+        if isinstance(outputs, list):
+            loss = self.loss_func(outputs[-1], targets)
 
-        if self.loss_gamma > 0:
-            for s in range(1,len(outputs)):
-                if self.loss_choice == 'decay':
-                    weight = self.loss_gamma**s
-                elif self.loss_choice == 'weighted':
-                    weight = self.loss_gamma
-                weight_sum += weight
-                loss += weight * self.loss_func(outputs[-(s+1)], targets)
+            if self.loss_gamma > 0:
+                for s in range(1,len(outputs)):
+                    if self.loss_choice == 'decay':
+                        weight = self.loss_gamma**s
+                    elif self.loss_choice == 'weighted':
+                        weight = self.loss_gamma
+                    weight_sum += weight
+                    loss += weight * self.loss_func(outputs[-(s+1)], targets)
+
+        else:
+            loss = self.loss_func(outputs, targets)
 
         loss = loss / weight_sum
         losses = {'loss_labels': loss}
@@ -166,7 +189,7 @@ def main(rank, world_size, args):
 
     args.val_perf = 0
 
-    train_loader, val_loader = fetch_data_loaders(args)
+    train_loader, sampler_train, val_loader = fetch_data_loaders(args)
  
     model = build_model(args)
     model = model.cuda() 
@@ -195,8 +218,12 @@ def main(rank, world_size, args):
             train_params = checkpoint['train_params']
             param_dicts = [ { "params" : [ p for n , p in model.named_parameters() if n in train_params ]}, ] 
 
-            optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
-                          weight_decay=args.weight_decay)
+            # optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
+            #               weight_decay=args.weight_decay)
+            args.momentum = 0.9
+            optimizer = torch.optim.SGD(param_dicts, args.lr,
+                                momentum=args.momentum,
+                                weight_decay=args.weight_decay)
             optimizer.load_state_dict(checkpoint['optimizer'])
         
             lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
@@ -212,9 +239,13 @@ def main(rank, world_size, args):
 
         print('\ntrain_params', train_params)
 
-        optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
-                                      weight_decay=args.weight_decay)
-        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop, gamma=0.5)
+        # optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
+        #                               weight_decay=args.weight_decay)
+        args.momentum = 0.9
+        optimizer = torch.optim.SGD(param_dicts, args.lr,
+                                momentum=args.momentum,
+                                weight_decay=args.weight_decay)
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop, gamma=0.1)
 
         args.start_epoch = 0
 
@@ -256,8 +287,8 @@ def main(rank, world_size, args):
     start_time = time.time()
     
     for epoch in range(args.start_epoch, args.epochs):
-        # if args.distributed:
-        #     sampler_train.set_epoch(epoch)
+        if args.distributed:
+            sampler_train.set_epoch(epoch)
             
         train_stats = train_one_epoch(
             model_ddp, criterion, train_loader, optimizer, args.device, epoch,

@@ -151,4 +151,4 @@ def fetch_data_loaders(args):
     val_loader = torch.utils.data.DataLoader(dataset_val, args.batch_size, sampler=sampler_val,
                                 drop_last=False, num_workers=args.num_workers) #, collate_fn=utils.collate_fn
 
-    return train_loader, val_loader
+    return train_loader, sampler_train, val_loader

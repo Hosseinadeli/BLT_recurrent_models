@@ -36,7 +36,6 @@ class Unsqueeze(nn.Module):
         return x.view(x.size(0), x.size(1), 1, 1)
 
 
-
 # BLT
 
 class blt(nn.Module):
@@ -188,7 +187,7 @@ class blt(nn.Module):
         # self.gap = nn.AdaptiveAvgPool2d(1)
 
         self.read_out = nn.Sequential(OrderedDict([
-            ('maxpool', nn.AdaptiveMaxPool2d(1)),
+            ('gap', nn.AdaptiveAvgPool2d(1)),
             ('flatten', Flatten()),
             ('linear', nn.Linear(512, self.num_classes))
         ]))
@@ -206,7 +205,7 @@ class blt(nn.Module):
             outputs[block] = None
 
         # if the model is b then we don't need to iterate over time steps
-        if self.model_name=='b':
+        if self.model_name=='b' or self.model_name=='b_pm':
             for block in blocks[2:]:
                 in_blocks =  self.conn_matrix[:,int(block)] 
                 i = np.where(in_blocks)[0][0]
@@ -217,7 +216,7 @@ class blt(nn.Module):
                 outputs[block] = new_output
 
             out = outputs[blocks[-1]]
-            return [self.read_out(out)] # make a list to make it cosistent with the recurrent model
+            return self.read_out(out) # make a list to make it cosistent with the recurrent model?
 
         all_outs = []
         # iterate over time steps
@@ -314,7 +313,7 @@ def get_blt_model(model_name, pretrained=False, map_location=None, **kwargs):
     if 'b2' in model_name: shift = shift + [-2]
     if 'b3' in model_name: shift = shift + [-2, -3]
     if 't' in model_name: shift = shift + [1] 
-    if 't2' in model_name: shift = shift + [1, 2]
+    if 't2' in model_name: shift = shift + [2]
     if 't3' in model_name: shift = shift + [2, 3]
     for i in range(num_layers):
         for j in range(num_layers):

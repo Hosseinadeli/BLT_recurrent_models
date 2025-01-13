@@ -1,5 +1,6 @@
 from models.cornet import get_cornet_model
 from models.blt import get_blt_model
+from models.ResNet import ResNet
 
 def build_model(args, pretrained=False, verbose=True):
 
@@ -25,6 +26,9 @@ def build_model(args, pretrained=False, verbose=True):
 
         model = get_cornet_model(args.model[7:], pretrained=pretrained, map_location=None, **kwargs) #
         
+    elif 'resnet' in args.model:
+        model = ResNet()
+
 
     num_parameters =  sum(p.numel() for p in model.parameters() if p.requires_grad)
 
