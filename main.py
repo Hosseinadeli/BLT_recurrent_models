@@ -79,9 +79,9 @@ def get_args_parser():
                         help='whether to have loss in earlier steps of the readout')
 
     parser.add_argument('--recurrent_steps', default=10, type=int,
-                        help='number of time steps to run the model (only R model)')
-    parser.add_argument('--num_layers', default=4, type=int,
-                        help='number of time steps to run the model (only R model)')
+                        help='number of time steps to run the model for recurrent models')
+    parser.add_argument('--num_layers', default=6, type=int,
+                        help='number of layers')
 
     parser.add_argument('--num_workers', default=4, type=int,
                         help='number of data loading num_workers')
@@ -94,6 +94,8 @@ def get_args_parser():
     parser.add_argument('--weight_decay', default=1e-4, type=float,
                         help='weight decay ')
     parser.add_argument('--lr_drop', default=30, type=int)
+    parser.add_argument('--momentum', default=0.9, type=float,
+                        help='momentum')
     parser.add_argument('--clip_max_norm', default=0, type=float,
                         help='gradient clipping max norm') #0.1
     
@@ -113,7 +115,6 @@ def get_args_parser():
     parser.add_argument('--horizontal_flip', default=False, type=bool,
                     help='wether to use horizontal flip augmentation')
     parser.add_argument('--run', default='1', type=str) 
-    #parser.add_argument('--run_name', default=1, type=int) 
     
     parser.add_argument('--img_channels', default=3, type=int,
                     help="what should the image channels be (not what it is)?") #gray scale 1 / color 3
@@ -180,6 +181,10 @@ def main(rank, world_size, args):
         args.rank = rank
         args.world_size = world_size
         utils.init_distributed_mode(args)
+
+        args.batch_size = int(args.batch_size / args.world_size)
+        args.num_workers = int((args.num_workers + args.world_size - 1) / args.world_size)
+        print(f'batch_size:{args.batch_size};   workers:{args.num_workers}')
     else:
         args.gpu = 0
 
@@ -220,13 +225,12 @@ def main(rank, world_size, args):
 
             # optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
             #               weight_decay=args.weight_decay)
-            args.momentum = 0.9
             optimizer = torch.optim.SGD(param_dicts, args.lr,
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
             optimizer.load_state_dict(checkpoint['optimizer'])
         
-            lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
+            lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop, gamma=0.1)
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
             args.start_epoch = checkpoint['epoch'] + 1
             
@@ -241,11 +245,12 @@ def main(rank, world_size, args):
 
         # optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
         #                               weight_decay=args.weight_decay)
-        args.momentum = 0.9
+
         optimizer = torch.optim.SGD(param_dicts, args.lr,
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
         lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop, gamma=0.1)
+        #lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[30,60,90], gamma=0.1)
 
         args.start_epoch = 0
 
@@ -257,6 +262,8 @@ def main(rank, world_size, args):
                 
             if args.wandb_r:
                 wandb_r = args.wandb_r 
+            elif args.run:
+                wandb_r = f'{args.model}_{args.run}'
             else:
                 wandb_r = args.model 
 

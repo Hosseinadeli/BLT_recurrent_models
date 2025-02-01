@@ -5,4 +5,5 @@ blt copy.py
 resources/
 __pycache__
 datasets/saved_data/
+run_model.ipynb
 *.db

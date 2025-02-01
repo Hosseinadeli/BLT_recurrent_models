@@ -94,7 +94,8 @@ def evaluate(model, criterion, data_loader, args=None, lh_challenge_rois=None, r
 
         # pred_logits = outputs['pred_logits']
 
-        #outputs = outputs[-1]
+        if isinstance(outputs, list):
+            outputs = outputs[-1]
         p1, p5 = accuracy(outputs, labels, topk=(1, 5))
         record['top1'] += p1
         record['top5'] += p5
