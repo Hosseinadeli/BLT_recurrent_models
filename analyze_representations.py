@@ -204,13 +204,13 @@ def FBO_dataset():
 import scipy.io
 
 def kasper_dataset():
-    mat = scipy.io.loadmat('./datasets/saved_data/images.mat')
+    mat = scipy.io.loadmat('/engram/nklab/hossein/recurrent_models/BLT_models/datasets/saved_data/images.mat')
     imarray = mat['imarray']
 
-    neuro_mat = scipy.io.loadmat('./datasets/saved_data/neural.mat')
+    neuro_mat = scipy.io.loadmat('/engram/nklab/hossein/recurrent_models/BLT_models/datasets/saved_data/neural.mat')
     neuro_data = neuro_mat['R'].transpose()
 
-    imgs = torch.load('./datasets/saved_data/imgs_kasper.pt')
+    imgs = torch.load('/engram/nklab/hossein/recurrent_models/BLT_models/datasets/saved_data/imgs_kasper.pt')
 
     # try:
     #     imgs = torch.load('./datasets/saved_data/imgs_kasper.pt')
