@@ -119,12 +119,12 @@ class blt(nn.Module):
                         # apply avgpooling if the output shape is 1 and the input shape is not 1
                         if out_shape[f'{i}'] != 1 and out_shape[f'{j}'] == 1:
                             conn = nn.Sequential(OrderedDict([
-                                # ('maxpool', nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
-                                # ('flatten', Flatten()),
-                                # ('linear', nn.Linear(512*4*4, self.layer_channels[f'{j}'])),
-                                # ('Unsqueeze', Unsqueeze(2)),
-                                ('avgpool', nn.AdaptiveAvgPool2d(1)),
-                                ('conv', conv)
+                                ('maxpool', nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
+                                ('flatten', Flatten()),
+                                ('linear', nn.Linear(512*4*4, self.layer_channels[f'{j}'])),
+                                ('Unsqueeze', Unsqueeze(2)),
+                                # ('avgpool', nn.AdaptiveAvgPool2d(1)),
+                                # ('conv', conv)
                             ]))
 
                         else:
@@ -287,7 +287,7 @@ def get_blt_model(model_name, pretrained=False, map_location=None, **kwargs):
 
         # if we have two linear layer after 4 conv layers
         if 'top2linear' in model_name:
-            layer_channels  = {'inp':img_channels, '0':64, '1':128, '2':256, '3':512, '4':2048 , '5':512}
+            layer_channels  = {'inp':img_channels, '0':64, '1':128, '2':256, '3':512, '4':1024 , '5':512}
             out_shape  = {'0':56, '1':28, '2':14, '3':7, '4':1, '5':1}
 
         # we can paramter match a 6 layer b model with a 4 layer bl model (~ 6.5 m)

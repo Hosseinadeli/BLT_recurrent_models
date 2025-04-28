@@ -64,7 +64,7 @@ def get_args_parser():
 
 
     parser.add_argument('--pool', choices=['max', 'average', 'blur'],
-                        default='blur', help='which pooling operation to use')
+                        default='max', help='which pooling operation to use')
     
     parser.add_argument('--objective', choices=['classification', 'contrastive'],
                         default='classification', help='which model to train')
@@ -89,11 +89,11 @@ def get_args_parser():
                         help='number of total epochs to run')
     parser.add_argument('--batch_size', default=128, type=int,
                         help='mini-batch size')
-    parser.add_argument('--lr', default=.1, type=float,
+    parser.add_argument('--lr', default=.0005, type=float,
                         help='initial learning rate')
     parser.add_argument('--weight_decay', default=1e-4, type=float,
                         help='weight decay ')
-    parser.add_argument('--lr_drop', default=30, type=int)
+    parser.add_argument('--lr_drop', default=100, type=int)
     parser.add_argument('--momentum', default=0.9, type=float,
                         help='momentum')
     parser.add_argument('--clip_max_norm', default=0, type=float,
@@ -223,14 +223,14 @@ def main(rank, world_size, args):
             train_params = checkpoint['train_params']
             param_dicts = [ { "params" : [ p for n , p in model.named_parameters() if n in train_params ]}, ] 
 
-            # optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
-            #               weight_decay=args.weight_decay)
-            optimizer = torch.optim.SGD(param_dicts, args.lr,
-                                momentum=args.momentum,
-                                weight_decay=args.weight_decay)
+            optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
+                          weight_decay=args.weight_decay)
+            # optimizer = torch.optim.SGD(param_dicts, args.lr,
+            #                     momentum=args.momentum,
+            #                     weight_decay=args.weight_decay)
             optimizer.load_state_dict(checkpoint['optimizer'])
         
-            lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop, gamma=0.1)
+            lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop, gamma=0.5)
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
             args.start_epoch = checkpoint['epoch'] + 1
             
@@ -243,13 +243,13 @@ def main(rank, world_size, args):
 
         print('\ntrain_params', train_params)
 
-        # optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
-        #                               weight_decay=args.weight_decay)
+        optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
+                                      weight_decay=args.weight_decay)
 
-        optimizer = torch.optim.SGD(param_dicts, args.lr,
-                                momentum=args.momentum,
-                                weight_decay=args.weight_decay)
-        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop, gamma=0.1)
+        # optimizer = torch.optim.SGD(param_dicts, args.lr,
+        #                         momentum=args.momentum,
+        #                         weight_decay=args.weight_decay)
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop, gamma=0.5)
         #lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[30,60,90], gamma=0.1)
 
         args.start_epoch = 0
