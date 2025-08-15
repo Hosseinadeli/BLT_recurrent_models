@@ -59,7 +59,15 @@ class blt(nn.Module):
             self.conv_input = nn.Conv2d(self.layer_channels['inp'], self.layer_channels['0'], 
                                         kernel_size=5, stride=1, padding=2) 
 
-        self.maxpool_input = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        #self.pool_input = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+
+        if pooling_function == 'max':
+            self.pool_input = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        elif pooling_function == 'avg':
+            self.pool_input = nn.AvgPool2d(kernel_size=3, stride=2, padding=1)
+        elif pooling_function == 'blur':
+            self.pool_input = antialiased_cnns.BlurPool(self.layer_channels['0'], stride=2)
+
 
         # self.non_lin_input =  nn.ReLU(inplace=True)
         # self.norm_input = nn.GroupNorm(32, self.layer_channels['0'])
@@ -76,7 +84,15 @@ class blt(nn.Module):
                 # setattr(self, f'norm_{i}_{j}', nn.GroupNorm(32, self.layer_channels[f'{j}']))
                 # setattr(self, f'non_lin_{i}_{j}', nn.ReLU(inplace=True))
 
-                # bottom-up or lateral connection
+                # lateral connection
+                if i == j:
+                    cnn_kwargs = dict(kernel_size=3, stride=1, padding=1)
+
+                    conv =  nn.Conv2d(self.layer_channels[f'{i}'], 
+                                      self.layer_channels[f'{j}'], 
+                                      **cnn_kwargs)
+
+                # bottom-up
                 if i <= j:
                     shape_factor = out_shape[f'{i}'] // out_shape[f'{j}'] 
 
@@ -189,7 +205,7 @@ class blt(nn.Module):
         self.read_out = nn.Sequential(OrderedDict([
             ('gap', nn.AdaptiveAvgPool2d(1)),
             ('flatten', Flatten()),
-            ('linear', nn.Linear(512, self.num_classes))
+            ('linear', nn.Linear(layer_channels['5'], self.num_classes))
         ]))
 
 
@@ -199,7 +215,7 @@ class blt(nn.Module):
         blocks = list(self.layer_channels.keys()) #['inp', '0', '1', '2', '3', '4', '5']
 
         inp = self.conv_input(inp)
-        inp = self.maxpool_input(inp)
+        inp = self.pool_input(inp)
         outputs[blocks[1]] = getattr(self, f'output_{blocks[1]}')(self.non_lin_0(self.norm_0(inp)))
         for block in blocks[2:]:
             outputs[block] = None
@@ -282,12 +298,13 @@ def get_blt_model(model_name, pretrained=False, map_location=None, **kwargs):
         out_shape  = {'0':56, '1':28, '2':14, '3':7, '4':7}
 
     elif num_layers == 6:
-        layer_channels = {'inp':img_channels, '0':64, '1':64, '2':128, '3':128, '4':256, '5':512}
-        out_shape  = {'0':56, '1':56, '2':28, '3':28, '4':14, '5':7}
+        layer_channels = {'inp':img_channels, '0':64, '1':64, '2':128, '3':256, '4':512, '5':512}
+        out_shape  = {'0':56, '1':56, '2':28, '3':14, '4':7, '5':7}
 
         # if we have two linear layer after 4 conv layers
         if 'top2linear' in model_name:
-            layer_channels  = {'inp':img_channels, '0':64, '1':128, '2':256, '3':512, '4':1024 , '5':512}
+            #layer_channels  = {'inp':img_channels, '0':64, '1':128, '2':256, '3':512, '4':1024 , '5':512}
+            layer_channels  = {'inp':img_channels, '0':64, '1':128, '2':256, '3':512, '4':1024 , '5':2048}
             out_shape  = {'0':56, '1':28, '2':14, '3':7, '4':1, '5':1}
 
         # we can paramter match a 6 layer b model with a 4 layer bl model (~ 6.5 m)

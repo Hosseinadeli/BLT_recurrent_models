@@ -243,8 +243,6 @@ def calc_rdms(model_features, method='euclidean'):
     if method == 'cka':
         metric = AngularCKA(m=len(model_features[list(model_features.keys())[0]]))
         rdms_dict = {k: metric.neural_data_to_point(torch.tensor(x)).numpy() for k, x in model_features.items()}
-        print(rdms_dict.keys())
-        print(rdms_dict['step 4'].shape)
         
         return None, rdms_dict
 
@@ -261,7 +259,8 @@ def calc_rdms(model_features, method='euclidean'):
             feats = feats.cpu()
 
         if len(feats.shape)>2:
-            feats = feats.flatten(1)
+            #feats = feats.flatten(1)
+            feats = feats.reshape(feats.shape[0], -1)
 
         #feats = feats.numpy()
 
@@ -369,7 +368,12 @@ def reduce_dim(features, transformer = 'MDS', n_components = 2):
     feats_transformed = {}
     
     for layer in return_layers:
-        feats = transformer_func.fit_transform(features[layer])
+
+        feats = features[layer]
+        if len(feats.shape)>2:
+            feats = feats.reshape(feats.shape[0], -1)
+
+        feats = transformer_func.fit_transform(feats)
         feats_transformed[layer] = feats
 
     return feats_transformed
@@ -552,16 +556,14 @@ def extract_features(model, imgs, layer, num_steps=5, normalize=False, filter_un
         if clip_acts is not None:
             output = np.clip(output, a_min=0, a_max=clip_acts)
 
-        print(output.shape)
         if filter_units is not None:
             output = output[:, :, filter_units, :] # only take the last time-step
-            print(output.shape)
 
         # average pooling over spatial dimensions in higher layers
-        if layer == 'output_4' or layer == 'output_5':
-            output = output.reshape(*output.shape[:3], -1).mean(-1)
-        else:
-            output = output.reshape(*output.shape[:2], -1)
+        # if layer == 'output_4' or layer == 'output_5':
+        #     output = output.reshape(*output.shape[:3], -1).mean(-1)
+        # else:
+        #     output = output.reshape(*output.shape[:2], -1)
 
         outputs.append(output)
 
